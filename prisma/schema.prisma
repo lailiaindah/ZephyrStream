@@ -1,0 +1,195 @@
+// ZephyrStream - Web Edition Prisma Schema
+// Multi-channel YouTube live streaming management platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String?
+  passwordHash String
+  role         String    @default("user") // user | admin
+  avatar       String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  channels     Channel[]
+  streams      Stream[]
+  files        UploadedFile[]
+  sessions     Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+model Channel {
+  id              String    @id @default(cuid())
+  userId          String
+  name            String
+  description     String?
+  youtubeChannelId String?
+  youtubeChannelName String?
+  // Google Cloud OAuth client credentials (one per channel)
+  // Each channel uses its own API/token to create live broadcasts in YouTube Studio
+  clientId        String
+  clientSecret    String
+  refreshToken    String?
+  accessToken     String?
+  tokenExpiresAt  DateTime?
+  status          String    @default("inactive") // active | inactive | error
+  lastSyncAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  streams         Stream[]
+
+  @@index([userId])
+}
+
+model Stream {
+  id              String    @id @default(cuid())
+  userId          String
+  channelId       String?
+  name            String
+  description     String?
+
+  // YouTube live broadcast configuration
+  streamKey       String    // YouTube stream key (used by FFmpeg for RTMP — saves API quota)
+  rtmpUrl         String    @default("rtmp://a.rtmp.youtube.com/live2")
+  broadcastId     String?   // Set when broadcast is created via YouTube API
+  streamId        String?   // Bound liveStream id
+  broadcastStatus String?   // created | ready | testing | live | complete | revoked
+  privacyStatus   String    @default("public") // public | unlisted | private
+  categoryId      String    @default("22") // People & Blogs
+  tags            String?   // Comma-separated
+  playlistId      String?
+  thumbnailUrl    String?
+  madeForKids     Boolean   @default(false)
+  alteredContent  Boolean   @default(false)
+
+  // Video source
+  sourceType      String    @default("local") // local | gdrive
+  sourcePath      String?   // Local folder path or Google Drive folder id
+  sourceFileIds   String?   // JSON array of file IDs (for multi-file)
+  shuffle         Boolean   @default(true)
+  loopUntilDuration Boolean @default(true)
+
+  // Schedule
+  startAt         DateTime?
+  durationMinutes Int       @default(180) // Stream duration in minutes
+  autoReschedule  Boolean   @default(false) // Auto-reschedule next day
+  autoDeleteAfterMinutes Int @default(30)
+
+  // FFmpeg configuration
+  encoder         String    @default("auto") // auto | x264 | nvenc | qsv | amf | videotoolbox
+  copyMode        Boolean   @default(false)
+  videoBitrate    String    @default("4500k")
+  audioBitrate    String    @default("160k")
+  resolution      String    @default("1920x1080")
+  fps             Int       @default(30)
+  preset          String    @default("veryfast")
+
+  // Title spinner (anti-spam)
+  spinnerMode     String    @default("off") // off | front | back | both
+  spinnerEmojis   String?   // JSON array of emojis
+
+  // Runtime
+  status          String    @default("scheduled") // scheduled | preparing | live | stopping | ended | error
+  pid             Int?
+  startedAt       DateTime?
+  endedAt         DateTime?
+  lastError       String?
+  logFile         String?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel         Channel?  @relation(fields: [channelId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([channelId])
+  @@index([status])
+}
+
+model UploadedFile {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String
+  originalName String
+  mimeType     String
+  size         Int
+  // Storage info
+  storageType  String   @default("local") // local | gdrive
+  storagePath  String?  // Local path on disk
+  gdriveFileId String?  // Google Drive file ID
+  // Metadata
+  duration     Float?   // In seconds (for video files)
+  width        Int?
+  height       Int?
+  codec        String?
+  bitrate      String?
+  // Status
+  status       String   @default("ready") // uploading | ready | error | deleted
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([storageType])
+}
+
+model SystemMetric {
+  id        String   @id @default(cuid())
+  cpuUsage  Float    // Percentage
+  cpuCores  Int
+  cpuTemp   Float?
+  ramTotal  Float    // In GB
+  ramUsed   Float
+  ramUsage  Float    // Percentage
+  diskTotal Float    // In GB
+  diskUsed  Float
+  diskUsage Float    // Percentage
+  netDownload Float  // In Mbps
+  netUpload   Float  // In Mbps
+  uptime    Float    // In seconds
+  loadAvg1  Float
+  loadAvg5  Float
+  loadAvg15 Float
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  level     String   @default("info") // info | warn | error | success
+  category  String   // auth | channel | stream | file | system
+  message   String
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([category])
+  @@index([createdAt])
+}

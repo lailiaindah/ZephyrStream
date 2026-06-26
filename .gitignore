@@ -1,0 +1,88 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# Testing
+coverage/
+
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# Production
+*.tsbuildinfo
+next-env.d.ts
+
+# Misc
+.DS_Store
+*.pem
+Thumbs.db
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local env files
+.env
+.env*.local
+.env.production
+
+# Vercel
+.vercel
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Database
+*.db
+*.db-journal
+db/*.db
+db/*.db-journal
+
+# Logs
+logs/
+*.log
+dev.log
+server.log
+
+# Uploads (keep dir, ignore content)
+public/uploads/*
+!public/uploads/.gitkeep
+
+# Stream logs
+logs/streams/*
+!logs/streams/.gitkeep
+
+# Analysis (local dev only)
+analysis/
+tool-results/
+upload/
+.zscripts/
+agent-ctx/
+skills/
+mini-services/
+examples/
+Caddyfile
+dev.log
+server.log
+worklog.md
+package-info.json
+download/
+public/uploads/*
+!public/uploads/.gitkeep
+db/custom.db
+db/custom.db-journal
+
+# OS
+.DS_Store
+*.bak
+*.tmp

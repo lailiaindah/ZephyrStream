@@ -1,0 +1,28 @@
+// GET /api/activity-logs — List recent activity logs
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth";
+
+export async function GET(req: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const { searchParams } = new URL(req.url);
+    const limit = parseInt(searchParams.get("limit") || "50", 10);
+    const category = searchParams.get("category");
+
+    const logs = await db.activityLog.findMany({
+      where: {
+        userId: user.id,
+        ...(category && category !== "all" ? { category } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: Math.min(limit, 200),
+    });
+
+    return NextResponse.json({ logs });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
