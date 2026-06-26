@@ -87,7 +87,14 @@ export async function exchangeCodeForTokens(
   };
 }
 
-// Refresh an expired access token using the stored refresh token
+// Refresh an expired access token using the stored refresh token.
+// CRITICAL: Google refresh tokens do NOT expire (unless revoked by user),
+// so as long as we keep refreshing access tokens proactively, the channel
+// stays authenticated indefinitely without re-authorization.
+//
+// If Google returns a NEW refresh token (rare, but happens on rotation),
+// we persist it — this is called "refresh token rotation" and is a
+// security best practice.
 export async function refreshAccessToken(channelId: string): Promise<string> {
   const channel = await db.channel.findUnique({ where: { id: channelId } });
   if (!channel) throw new Error("Channel not found");
@@ -103,16 +110,26 @@ export async function refreshAccessToken(channelId: string): Promise<string> {
   const { credentials } = await oauth2Client.refreshAccessToken();
   if (!credentials.access_token) throw new Error("Failed to refresh access token");
 
+  // Build update data — always update access token + expiry
+  const updateData: any = {
+    accessToken: credentials.access_token,
+    tokenExpiresAt: credentials.expiry_date
+      ? new Date(credentials.expiry_date)
+      : new Date(Date.now() + 3600 * 1000),
+    lastSyncAt: new Date(),
+    status: "active",
+  };
+
+  // If Google returned a NEW refresh token (rotation), persist it.
+  // Otherwise keep the existing one (refresh tokens are long-lived).
+  if (credentials.refresh_token && credentials.refresh_token !== channel.refreshToken) {
+    updateData.refreshToken = credentials.refresh_token;
+    console.log(`[Auth] Refresh token rotated for channel ${channelId}`);
+  }
+
   await db.channel.update({
     where: { id: channelId },
-    data: {
-      accessToken: credentials.access_token,
-      tokenExpiresAt: credentials.expiry_date
-        ? new Date(credentials.expiry_date)
-        : new Date(Date.now() + 3600 * 1000),
-      lastSyncAt: new Date(),
-      status: "active",
-    },
+    data: updateData,
   });
 
   return credentials.access_token;

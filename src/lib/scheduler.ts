@@ -8,7 +8,8 @@
 
 import { db } from "@/lib/db";
 import { startFFmpegStream, isProcessRunning } from "@/lib/ffmpeg";
-import { createBroadcast, uploadThumbnail, pickTitleAndThumbnail } from "@/lib/youtube";
+import { createBroadcast, uploadThumbnail, pickTitleAndThumbnail, refreshAccessToken } from "@/lib/youtube";
+import { runCleanupIfNeeded } from "@/lib/cleanup";
 
 const CHECK_INTERVAL_MS = 30 * 1000; // 30 seconds
 let schedulerInterval: NodeJS.Timeout | null = null;
@@ -25,6 +26,9 @@ async function schedulerTick() {
     await autoStartScheduledStreams();
     await autoStopExpiredStreams();
     await cleanupGhostStreams();
+    await refreshExpiringTokens();
+    // Cleanup runs at most once per hour (throttled internally)
+    await runCleanupIfNeeded();
   } catch (err) {
     console.error("[Scheduler] Tick error:", err);
   } finally {
@@ -113,6 +117,58 @@ async function cleanupGhostStreams() {
       // If autoCreateSchedule is on, create the next-day schedule
       if (stream.autoCreateSchedule) {
         await createNextDaySchedule(stream);
+      }
+    }
+  }
+}
+
+// 4. Proactively refresh access tokens that will expire soon.
+// Google access tokens last 1 hour. We refresh any token that will
+// expire within the next 10 minutes — this prevents "re-authorize"
+// prompts and ensures scheduled streams can start without auth issues.
+// The refresh token itself does NOT expire (unless revoked by the user),
+// so as long as we keep refreshing access tokens, the channel stays
+// authenticated indefinitely.
+async function refreshExpiringTokens() {
+  // Refresh window: 10 minutes from now
+  const refreshBefore = new Date(Date.now() + 10 * 60 * 1000);
+
+  // Find channels with tokens expiring soon
+  const channels = await db.channel.findMany({
+    where: {
+      status: "active",
+      refreshToken: { not: null },
+      OR: [
+        { tokenExpiresAt: { lte: refreshBefore } },
+        { tokenExpiresAt: null },
+      ],
+    },
+  });
+
+  for (const channel of channels) {
+    try {
+      await refreshAccessToken(channel.id);
+      console.log(`[Scheduler] Proactively refreshed token for channel: ${channel.name}`);
+    } catch (err: any) {
+      console.warn(
+        `[Scheduler] Failed to refresh token for channel ${channel.name}:`,
+        err.message
+      );
+      // If refresh fails (e.g. refresh token revoked), mark channel as error
+      if (err.message.includes("invalid_grant") || err.message.includes("refresh token")) {
+        await db.channel.update({
+          where: { id: channel.id },
+          data: { status: "error" },
+        }).catch(() => {});
+        await db.activityLog.create({
+          data: {
+            userId: channel.userId,
+            level: "error",
+            category: "channel",
+            message: `Channel ${channel.name} token refresh failed — re-authorization required`,
+            details: err.message,
+          },
+        }).catch(() => {});
       }
     }
   }
