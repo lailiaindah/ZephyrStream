@@ -110,31 +110,31 @@ export function DashboardStats({ stats, counts }: DashboardStatsProps) {
         <IconTile
           icon={<Cpu className="h-4 w-4 text-cyan-300" />}
           label="CPU"
-          value={stats ? `${stats.cpu.usage.toFixed(0)}%` : "—"}
-          accent={stats && stats.cpu.usage > 80 ? "rose" : "cyan"}
-          progress={stats?.cpu.usage}
+          value={stats?.cpu?.usage != null ? `${stats.cpu.usage.toFixed(0)}%` : "—"}
+          accent={stats?.cpu?.usage != null && stats.cpu.usage > 80 ? "rose" : "cyan"}
+          progress={stats?.cpu?.usage}
           onClick={() => setDetailOpen("cpu")}
         />
         <IconTile
           icon={<MemoryStick className="h-4 w-4 text-emerald-300" />}
           label="RAM"
-          value={stats ? `${stats.memory.usage.toFixed(0)}%` : "—"}
-          accent={stats && stats.memory.usage > 85 ? "rose" : "emerald"}
-          progress={stats?.memory.usage}
+          value={stats?.memory?.usage != null ? `${stats.memory.usage.toFixed(0)}%` : "—"}
+          accent={stats?.memory?.usage != null && stats.memory.usage > 85 ? "rose" : "emerald"}
+          progress={stats?.memory?.usage}
           onClick={() => setDetailOpen("memory")}
         />
         <IconTile
           icon={<HardDrive className="h-4 w-4 text-amber-300" />}
           label="Disk"
-          value={stats && stats.disk[0] ? `${stats.disk[0].usage.toFixed(0)}%` : "—"}
-          accent={stats && stats.disk[0] && stats.disk[0].usage > 85 ? "rose" : "amber"}
-          progress={stats?.disk[0]?.usage}
+          value={stats?.disk?.[0] ? `${stats.disk[0].usage.toFixed(0)}%` : "—"}
+          accent={stats?.disk?.[0]?.usage != null && stats.disk[0].usage > 85 ? "rose" : "amber"}
+          progress={stats?.disk?.[0]?.usage}
           onClick={() => setDetailOpen("disk")}
         />
         <IconTile
           icon={<Wifi className="h-4 w-4 text-rose-300" />}
           label="Net"
-          value={stats ? `${stats.network.downloadSpeed.toFixed(0)}` : "—"}
+          value={stats?.network?.downloadSpeed != null ? `${stats.network.downloadSpeed.toFixed(0)}` : "—"}
           accent="rose"
           onClick={() => setDetailOpen("network")}
         />
@@ -163,7 +163,7 @@ export function DashboardStats({ stats, counts }: DashboardStatsProps) {
         <IconTile
           icon={<Activity className="h-4 w-4 text-amber-300" />}
           label="Uptime"
-          value={stats ? formatUptime(stats.uptime) : "—"}
+          value={stats?.uptime != null ? formatUptime(stats.uptime) : "—"}
           accent="amber"
           onClick={() => setDetailOpen("uptime")}
         />

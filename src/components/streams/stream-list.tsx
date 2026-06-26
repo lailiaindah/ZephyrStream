@@ -362,7 +362,7 @@ export function StreamList() {
                   <div className="rounded-md bg-slate-950/50 border border-slate-800/60 py-2">
                     <Clock className="h-3 w-3 text-slate-500 mx-auto mb-0.5" />
                     <p className="text-xs font-semibold text-slate-300">
-                      {stream.resolution.split("x")[1]}p
+                      {stream.resolution ? stream.resolution.split("x")[1] + "p" : "—"}
                     </p>
                   </div>
                   <div className="rounded-md bg-slate-950/50 border border-slate-800/60 py-2">
