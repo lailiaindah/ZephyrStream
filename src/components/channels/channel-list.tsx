@@ -440,7 +440,7 @@ function ChannelFileManager({
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-slate-200 truncate">{file.originalName}</p>
                   <p className="text-[10px] text-slate-500">
-                    {(file.size / 1024 / 1024).toFixed(1)} MB • {file.mimeType}
+                    {file.size != null ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "—"} • {file.mimeType || "unknown"}
                   </p>
                 </div>
                 <Button

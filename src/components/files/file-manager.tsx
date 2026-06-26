@@ -309,7 +309,7 @@ export function FileManager() {
                       {file.originalName}
                     </p>
                     <p className="text-xs text-slate-500">
-                      {(file.size / 1024 / 1024).toFixed(1)} MB
+                      {file.size != null ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "—"}
                     </p>
                     <p className="text-[10px] text-slate-600 mt-0.5">
                       {new Date(file.createdAt).toLocaleDateString()}
