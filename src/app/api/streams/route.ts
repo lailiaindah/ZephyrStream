@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
         privacyStatus: privacyStatus || source?.privacyStatus || "public",
         categoryId: categoryId || source?.categoryId || "22",
         tags: tags || source?.tags || null,
-        playlistId: playlistId || source?.playlistId || null,
+        playlistId: (typeof playlistId === "string" ? playlistId.trim() : playlistId) || source?.playlistId || null,
         alteredContent: alteredContent ?? source?.alteredContent ?? false,
         spinnerMode: spinnerMode || source?.spinnerMode || "off",
         spinnerEmojis: spinnerEmojis

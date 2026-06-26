@@ -60,12 +60,17 @@ export async function PATCH(
     ];
 
     const updateData: any = {};
+    // Fields that should be trimmed if they're strings (avoid storing whitespace-only values)
+    const trimFields = ["playlistId", "tags", "streamKey", "name", "description"];
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
         if (field === "startAt") {
           updateData[field] = body[field] ? new Date(body[field]) : null;
         } else if (field === "sourceFileIds" || field === "spinnerEmojis") {
           updateData[field] = body[field] ? JSON.stringify(body[field]) : null;
+        } else if (trimFields.includes(field) && typeof body[field] === "string") {
+          // Trim whitespace and convert empty strings to null
+          updateData[field] = body[field].trim() || null;
         } else {
           updateData[field] = body[field];
         }
