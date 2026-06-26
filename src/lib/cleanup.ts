@@ -21,13 +21,27 @@ const METRIC_RETENTION_HOURS = 24;
 const ACTIVITY_LOG_RETENTION_DAYS = 30;
 
 let lastCleanupRun = 0;
+let isCleanupRunning = false; // prevent concurrent cleanup runs
 
 // Main cleanup function — called from scheduler tick
 export async function runCleanupIfNeeded() {
   const now = Date.now();
   if (now - lastCleanupRun < CLEANUP_INTERVAL_MS) return;
+  // Prevent concurrent runs (scheduler tick + manual API trigger).
+  // Use a tight check-then-set pattern. There's still a tiny race window
+  // in JS (no true atomic CAS), but the second run will see
+  // isCleanupRunning=true and the now-updated lastCleanupRun, so it bails.
+  if (isCleanupRunning) return;
 
-  lastCleanupRun = now;
+  isCleanupRunning = true;
+  lastCleanupRun = now; // update immediately so concurrent callers bail
+
+  // Double-check after setting the flag (defensive)
+  if (now !== lastCleanupRun) {
+    isCleanupRunning = false;
+    return;
+  }
+
   console.log("[Cleanup] Running scheduled cleanup...");
 
   try {
@@ -40,6 +54,8 @@ export async function runCleanupIfNeeded() {
     console.log("[Cleanup] Done");
   } catch (err: any) {
     console.error("[Cleanup] Error:", err.message);
+  } finally {
+    isCleanupRunning = false;
   }
 }
 
@@ -139,10 +155,32 @@ async function pruneTempFiles() {
   }
 }
 
-// Manual cleanup trigger (for API endpoint)
+// Manual cleanup trigger (for API endpoint).
+// Forces a cleanup run regardless of the throttle, and updates
+// lastCleanupRun so the scheduler doesn't immediately run again.
 export async function runCleanupNow() {
-  const oldLast = lastCleanupRun;
-  lastCleanupRun = 0; // force run
-  await runCleanupIfNeeded();
-  lastCleanupRun = oldLast;
+  // If already running, skip (prevents concurrent manual + scheduler runs)
+  if (isCleanupRunning) {
+    return { skipped: true, reason: "Cleanup already running" };
+  }
+
+  isCleanupRunning = true;
+  lastCleanupRun = Date.now(); // prevent scheduler from triggering too
+  console.log("[Cleanup] Running manual cleanup...");
+
+  try {
+    await Promise.all([
+      pruneStreamLogs(),
+      pruneSystemMetrics(),
+      pruneActivityLogs(),
+      pruneTempFiles(),
+    ]);
+    console.log("[Cleanup] Done");
+  } catch (err: any) {
+    console.error("[Cleanup] Error:", err.message);
+  } finally {
+    isCleanupRunning = false;
+  }
+
+  return { skipped: false };
 }
