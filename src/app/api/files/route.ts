@@ -1,18 +1,39 @@
-// GET /api/files — List user's uploaded files
-// DELETE /api/files — Delete a file
+// GET /api/files — List user's uploaded files (filtered by channelId if provided)
+// DELETE /api/files — Delete a single file (by id) OR all files for a channel
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import fs from "fs/promises";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    const { searchParams } = new URL(req.url);
+    const channelId = searchParams.get("channelId");
+
+    // If channelId provided, verify ownership
+    if (channelId && channelId !== "unassigned") {
+      const channel = await db.channel.findFirst({
+        where: { id: channelId, userId: user.id },
+      });
+      if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
+    }
+
+    const where = {
+      userId: user.id,
+      ...(channelId === "unassigned"
+        ? { channelId: null }
+        : channelId
+        ? { channelId }
+        : {}),
+    };
+
     const files = await db.uploadedFile.findMany({
-      where: { userId: user.id },
+      where,
       orderBy: { createdAt: "desc" },
+      include: { channel: { select: { id: true, name: true } } },
     });
 
     return NextResponse.json({ files });
@@ -28,6 +49,57 @@ export async function DELETE(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const fileId = searchParams.get("id");
+    const channelId = searchParams.get("channelId");
+    const all = searchParams.get("all");
+
+    // Delete ALL files for a channel (or all user's files)
+    if (all === "true") {
+      const where = {
+        userId: user.id,
+        ...(channelId && channelId !== "unassigned"
+          ? { channelId }
+          : channelId === "unassigned"
+          ? { channelId: null }
+          : {}),
+      };
+
+      // Verify channel ownership if channelId provided
+      if (channelId && channelId !== "unassigned") {
+        const channel = await db.channel.findFirst({
+          where: { id: channelId, userId: user.id },
+        });
+        if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
+      }
+
+      const files = await db.uploadedFile.findMany({ where });
+
+      // Delete physical files
+      for (const f of files) {
+        if (f.storagePath) {
+          try {
+            await fs.unlink(f.storagePath);
+          } catch {}
+        }
+      }
+
+      const result = await db.uploadedFile.deleteMany({ where });
+
+      await db.activityLog.create({
+        data: {
+          userId: user.id,
+          level: "warn",
+          category: "file",
+          message: `Deleted ${result.count} file(s)`,
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        deleted: result.count,
+      });
+    }
+
+    // Delete a single file
     if (!fileId) {
       return NextResponse.json({ error: "File ID is required" }, { status: 400 });
     }
@@ -35,9 +107,7 @@ export async function DELETE(req: NextRequest) {
     const file = await db.uploadedFile.findFirst({
       where: { id: fileId, userId: user.id },
     });
-    if (!file) {
-      return NextResponse.json({ error: "File not found" }, { status: 404 });
-    }
+    if (!file) return NextResponse.json({ error: "File not found" }, { status: 404 });
 
     // Delete the physical file
     if (file.storagePath) {

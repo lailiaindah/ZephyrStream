@@ -23,6 +23,8 @@ model User {
   channels     Channel[]
   streams      Stream[]
   files        UploadedFile[]
+  titles       TitleItem[]
+  thumbnails   ThumbnailItem[]
   sessions     Session[]
 }
 
@@ -60,8 +62,61 @@ model Channel {
 
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   streams         Stream[]
+  files           UploadedFile[]
+  titles          TitleItem[]
+  thumbnails      ThumbnailItem[]
 
   @@index([userId])
+}
+
+// Per-channel list of stream titles — used by the rotator to vary stream titles
+// and avoid YouTube spam detection. Each channel has its own independent list.
+model TitleItem {
+  id        String   @id @default(cuid())
+  userId    String
+  channelId String
+  title     String
+  // Optional emoji to prepend/append (used by the spinner)
+  emoji     String?
+  // Rotator index — persisted across restarts so we know which title is next
+  // -1 means "not yet used"
+  sortOrder Int      @default(0)
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([channelId])
+}
+
+// Per-channel list of thumbnail images — paired with titles for rotation.
+// Each thumbnail belongs to exactly one channel.
+model ThumbnailItem {
+  id           String   @id @default(cuid())
+  userId       String
+  channelId    String
+  name         String
+  originalName String
+  mimeType     String
+  size         Int
+  // Local storage path on disk
+  storagePath  String
+  // Optional: YouTube thumbnail URL once uploaded (cached)
+  youtubeUrl   String?
+  // Rotator index
+  sortOrder    Int      @default(0)
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel      Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([channelId])
 }
 
 model Stream {
@@ -133,6 +188,7 @@ model Stream {
 model UploadedFile {
   id           String   @id @default(cuid())
   userId       String
+  channelId    String?  // Optional — when set, file is scoped to this channel only
   name         String
   originalName String
   mimeType     String
@@ -153,8 +209,10 @@ model UploadedFile {
   updatedAt    DateTime @updatedAt
 
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel      Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([channelId])
   @@index([storageType])
 }
 

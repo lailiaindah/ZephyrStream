@@ -43,11 +43,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Ensure upload directory exists
-    await fs.mkdir(UPLOAD_DIR, { recursive: true });
+    // Use per-channel upload directory
+    const uploadDir = path.join(UPLOAD_DIR, "channels", channelId);
+    await fs.mkdir(uploadDir, { recursive: true });
 
     const safeName = `${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-    const localPath = path.join(UPLOAD_DIR, safeName);
+    const localPath = path.join(uploadDir, safeName);
 
     // Download the file from Google Drive
     const { size, mimeType } = await downloadDriveFile(
@@ -59,10 +60,11 @@ export async function POST(req: NextRequest) {
       channel.clientSecret
     );
 
-    // Create database record
+    // Create database record (file is automatically assigned to this channel)
     const record = await db.uploadedFile.create({
       data: {
         userId: user.id,
+        channelId, // File is scoped to this channel
         name: safeName,
         originalName: fileName,
         mimeType,
@@ -79,7 +81,7 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         level: "success",
         category: "file",
-        message: `Imported from Google Drive: ${fileName}`,
+        message: `Imported from Google Drive to ${channel.name}: ${fileName}`,
       },
     });
 

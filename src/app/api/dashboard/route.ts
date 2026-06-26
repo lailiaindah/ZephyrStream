@@ -8,10 +8,12 @@ export async function GET() {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const [channels, streams, files, recentLogs, liveStreams] = await Promise.all([
+    const [channels, streams, files, titles, thumbnails, recentLogs, liveStreams] = await Promise.all([
       db.channel.count({ where: { userId: user.id } }),
       db.stream.count({ where: { userId: user.id } }),
       db.uploadedFile.count({ where: { userId: user.id } }),
+      db.titleItem.count({ where: { userId: user.id } }),
+      db.thumbnailItem.count({ where: { userId: user.id } }),
       db.activityLog.findMany({
         where: { userId: user.id },
         orderBy: { createdAt: "desc" },
@@ -31,7 +33,14 @@ export async function GET() {
         status: true,
         youtubeChannelName: true,
         lastSyncAt: true,
-        _count: { select: { streams: true } },
+        _count: {
+          select: {
+            streams: true,
+            files: true,
+            titles: true,
+            thumbnails: true,
+          },
+        },
       },
     });
 
@@ -47,6 +56,8 @@ export async function GET() {
         channels,
         streams,
         files,
+        titles,
+        thumbnails,
         liveStreams: liveStreams.length,
       },
       liveStreams,

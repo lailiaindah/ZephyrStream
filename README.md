@@ -24,13 +24,21 @@ Live monitoring of your VPS resources, refreshed every 5 seconds:
 - Historical charts (last 60 minutes, stored in SQLite)
 - **Internet speed test** — downloads a test file from Cloudflare to measure actual throughput
 
-### 📁 File Management
+### 📁 File Management (Per-Channel Isolation)
 - **Upload from PC** — drag-and-drop or click to browse (multi-file supported)
 - **Import from Google Drive** — uses a connected channel's OAuth credentials
   - Browse folders, navigate subfolders, import individual files
   - Files are downloaded to your VPS for FFmpeg streaming
 - Supported video formats: MP4, MOV, MKV, AVI, WebM, TS, FLV, M4V
 - Per-file metadata (size, mime type, upload date)
+- **🔍 Channel-scoped isolation** — files uploaded to Channel A do NOT appear in Channel B
+  - Filter files by channel in the File Manager (dropdown: All / Unassigned / specific channel)
+  - Uploads are automatically assigned to the selected channel
+  - Google Drive imports are automatically assigned to the channel used for browsing
+- **🗑️ Delete options**:
+  - Single file delete (trash icon on each file card)
+  - Delete all files for a channel (with confirmation)
+  - Files are stored in `public/uploads/channels/{channelId}/` for clean filesystem isolation
 
 ### 📺 Multi-Channel Management
 Each channel uses its own **Google Cloud Console credentials** (clientId + clientSecret):
@@ -38,7 +46,28 @@ Each channel uses its own **Google Cloud Console credentials** (clientId + clien
 - OAuth 2.0 flow with refresh tokens (auto-refreshed when expired)
 - Per-channel sync — fetch latest YouTube channel info (subscriber count, view count, video count)
 - Channel status tracking (active / inactive / error)
-- Per-channel stream counter
+- Per-channel counter (streams / files / titles / thumbnails)
+- **Channel detail view** — click any channel card to see its:
+  - **Stream Titles list** (per-channel, with bulk add via paste)
+  - **Thumbnails gallery** (per-channel, with multi-image upload)
+  - **Video Files list** (per-channel, with upload & delete)
+
+### 📝 Stream Titles (Per-Channel Rotator)
+Each channel has its own independent list of stream titles:
+- Add titles one-by-one or **bulk paste** (one title per line)
+- Toggle individual titles on/off
+- Reorder via sort order (persisted)
+- Titles are used by the stream rotator to vary broadcast names (anti-spam)
+- **Delete single** title or **delete all** titles for a channel
+- Titles for Channel A never appear when configuring Channel B
+
+### 🖼️ Thumbnails (Per-Channel Gallery)
+Each channel has its own thumbnail collection:
+- Upload multiple images at once (JPG, PNG, WebP, BMP)
+- Visual gallery preview with file size
+- **Delete single** thumbnail (hover overlay) or **delete all** thumbnails
+- Stored in `public/uploads/thumbnails/{channelId}/` for clean filesystem isolation
+- Thumbnails for Channel A never appear when configuring Channel B
 
 > **Why per-channel credentials?** Google Cloud's YouTube Data API has a default quota of **10,000 units/day**. By using separate credentials per channel, you effectively multiply your quota by the number of channels — each channel gets its own 10,000 units.
 

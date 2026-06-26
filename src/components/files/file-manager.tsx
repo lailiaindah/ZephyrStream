@@ -28,20 +28,34 @@ import {
   Loader2,
   Cloud,
   FolderOpen,
-  CheckCircle2,
   Download,
+  Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function FileManager() {
   const queryClient = useQueryClient();
   const [gdriveOpen, setGdriveOpen] = useState(false);
+  const [channelFilter, setChannelFilter] = useState<string>("all");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["files"],
+  // Fetch channels for the filter dropdown
+  const { data: channelsData } = useQuery({
+    queryKey: ["channels"],
     queryFn: async () => {
-      const res = await fetch("/api/files");
+      const res = await fetch("/api/channels");
+      const data = await res.json();
+      return data.channels as any[];
+    },
+  });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["files", channelFilter],
+    queryFn: async () => {
+      const url = channelFilter === "all"
+        ? "/api/files"
+        : `/api/files?channelId=${channelFilter}`;
+      const res = await fetch(url);
       const data = await res.json();
       return data.files as any[];
     },
@@ -50,6 +64,7 @@ export function FileManager() {
   const uploadMutation = useMutation({
     mutationFn: async (files: File[]) => {
       const formData = new FormData();
+      formData.append("channelId", channelFilter === "all" ? "unassigned" : channelFilter);
       files.forEach((f) => formData.append("files", f));
       const res = await fetch("/api/files/upload", {
         method: "POST",
@@ -83,6 +98,23 @@ export function FileManager() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const deleteAllMutation = useMutation({
+    mutationFn: async () => {
+      const params = new URLSearchParams({ all: "true" });
+      if (channelFilter !== "all") params.set("channelId", channelFilter);
+      const res = await fetch(`/api/files?${params}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success(`Deleted ${data.deleted} file(s)`);
+      queryClient.invalidateQueries({ queryKey: ["files"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -97,24 +129,72 @@ export function FileManager() {
     uploadMutation.mutate(files);
   };
 
+  const selectedChannel = channelsData?.find((c) => c.id === channelFilter);
+  const channelName = channelFilter === "all"
+    ? "All Channels"
+    : channelFilter === "unassigned"
+    ? "Unassigned"
+    : selectedChannel?.name || "Unknown";
+
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-lg font-semibold text-white">File Manager</h2>
           <p className="text-sm text-slate-400">
-            Upload video files from PC or import from Google Drive
+            Upload video files — automatically scoped to the selected channel
           </p>
         </div>
-        <Button
-          onClick={() => setGdriveOpen(true)}
-          variant="outline"
-          className="border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10"
-        >
-          <Cloud className="h-4 w-4 mr-2" />
-          Google Drive
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setGdriveOpen(true)}
+            variant="outline"
+            disabled={channelFilter === "all" || channelFilter === "unassigned"}
+            className="border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10"
+          >
+            <Cloud className="h-4 w-4 mr-2" />
+            Google Drive
+          </Button>
+        </div>
       </div>
+
+      {/* Channel filter */}
+      <Card className="border-slate-800/60 bg-slate-900/40 p-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2 text-sm text-slate-300">
+            <Filter className="h-4 w-4 text-cyan-300" />
+            <span>Filter by channel:</span>
+          </div>
+          <Select value={channelFilter} onValueChange={setChannelFilter}>
+            <SelectTrigger className="w-64 bg-slate-900 border-slate-700 text-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-slate-900 border-slate-700">
+              <SelectItem value="all">📁 All Channels (all files)</SelectItem>
+              <SelectItem value="unassigned">❓ Unassigned files</SelectItem>
+              {channelsData?.map((ch) => (
+                <SelectItem key={ch.id} value={ch.id}>
+                  {ch.status === "active" ? "✓" : "○"} {ch.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="text-xs text-slate-500 ml-auto">
+            {data?.length || 0} file(s) shown
+          </div>
+        </div>
+        {channelFilter !== "all" && channelFilter !== "unassigned" && (
+          <div className="mt-3 p-2.5 rounded-md bg-cyan-500/5 border border-cyan-500/20 text-xs text-cyan-300">
+            <strong>Note:</strong> New uploads &amp; Google Drive imports will be assigned to <strong>{channelName}</strong>.
+            Files for other channels won't appear here.
+          </div>
+        )}
+        {channelFilter === "all" && (
+          <div className="mt-3 p-2.5 rounded-md bg-amber-500/5 border border-amber-500/20 text-xs text-amber-300">
+            <strong>Tip:</strong> Select a specific channel to scope uploads. With "All Channels" selected, new uploads will be <strong>unassigned</strong>.
+          </div>
+        )}
+      </Card>
 
       {/* Upload zone */}
       <Card
@@ -135,7 +215,9 @@ export function FileManager() {
           {uploadMutation.isPending ? (
             <>
               <Loader2 className="h-10 w-10 text-cyan-300 mx-auto mb-3 animate-spin" />
-              <p className="text-sm text-slate-300">Uploading files...</p>
+              <p className="text-sm text-slate-300">
+                Uploading to {channelName}...
+              </p>
             </>
           ) : (
             <>
@@ -146,6 +228,11 @@ export function FileManager() {
                 Drop files here or click to upload
               </p>
               <p className="text-xs text-slate-500">
+                {channelFilter === "all"
+                  ? "Files will be uploaded as unassigned — select a channel to scope them"
+                  : `Files will be assigned to: ${channelName}`}
+              </p>
+              <p className="text-[10px] text-slate-600 mt-1">
                 Supports multiple files: MP4, MOV, MKV, AVI, WebM, TS, FLV
               </p>
             </>
@@ -153,7 +240,33 @@ export function FileManager() {
         </div>
       </Card>
 
-      {/* File list */}
+      {/* File list with delete-all */}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-white">
+          {channelName} — {data?.length || 0} file(s)
+        </h3>
+        {data && data.length > 0 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              if (confirm(`Delete ALL ${data.length} files for ${channelName}? This cannot be undone.`)) {
+                deleteAllMutation.mutate();
+              }
+            }}
+            disabled={deleteAllMutation.isPending}
+            className="text-rose-400 hover:bg-rose-500/10 hover:text-rose-300"
+          >
+            {deleteAllMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+            )}
+            Delete All Files
+          </Button>
+        )}
+      </div>
+
       {isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
@@ -165,7 +278,10 @@ export function FileManager() {
       ) : !data || data.length === 0 ? (
         <Card className="border-slate-800/60 bg-slate-900/40 p-10 text-center">
           <FileVideo className="h-10 w-10 text-slate-700 mx-auto mb-2" />
-          <p className="text-sm text-slate-400">No files uploaded yet</p>
+          <p className="text-sm text-slate-400">No files in this view</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Upload files above or switch the channel filter
+          </p>
         </Card>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -189,13 +305,25 @@ export function FileManager() {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white truncate">{file.originalName}</p>
+                    <p className="text-sm font-medium text-white truncate">
+                      {file.originalName}
+                    </p>
                     <p className="text-xs text-slate-500">
                       {(file.size / 1024 / 1024).toFixed(1)} MB
                     </p>
                     <p className="text-[10px] text-slate-600 mt-0.5">
                       {new Date(file.createdAt).toLocaleDateString()}
                     </p>
+                    {file.channel && (
+                      <p className="text-[10px] text-cyan-400 mt-0.5">
+                        📺 {file.channel.name}
+                      </p>
+                    )}
+                    {!file.channel && (
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        ❓ Unassigned
+                      </p>
+                    )}
                   </div>
                   <Button
                     size="icon"
@@ -216,14 +344,26 @@ export function FileManager() {
         </div>
       )}
 
-      <GoogleDriveDialog open={gdriveOpen} onOpenChange={setGdriveOpen} />
+      <GoogleDriveDialog
+        open={gdriveOpen}
+        onOpenChange={setGdriveOpen}
+        channelId={channelFilter}
+      />
     </div>
   );
 }
 
-function GoogleDriveDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+function GoogleDriveDialog({
+  open,
+  onOpenChange,
+  channelId,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  channelId: string;
+}) {
   const queryClient = useQueryClient();
-  const [channelId, setChannelId] = useState("");
+  const [selectedChannelId, setSelectedChannelId] = useState(channelId === "all" || channelId === "unassigned" ? "" : channelId);
   const [currentFolderId, setCurrentFolderId] = useState("root");
   const [folderStack, setFolderStack] = useState<string[]>(["root"]);
 
@@ -237,18 +377,18 @@ function GoogleDriveDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   });
 
   const { data: driveFiles, isLoading } = useQuery({
-    queryKey: ["gdrive-files", channelId, currentFolderId],
+    queryKey: ["gdrive-files", selectedChannelId, currentFolderId],
     queryFn: async () => {
       const res = await fetch("/api/files/google-drive/list", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channelId, folderId: currentFolderId }),
+        body: JSON.stringify({ channelId: selectedChannelId, folderId: currentFolderId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       return data.files as any[];
     },
-    enabled: !!channelId && open,
+    enabled: !!selectedChannelId && open,
   });
 
   const importMutation = useMutation({
@@ -256,7 +396,7 @@ function GoogleDriveDialog({ open, onOpenChange }: { open: boolean; onOpenChange
       const res = await fetch("/api/files/google-drive/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileId, fileName, channelId }),
+        body: JSON.stringify({ fileId, fileName, channelId: selectedChannelId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -270,7 +410,7 @@ function GoogleDriveDialog({ open, onOpenChange }: { open: boolean; onOpenChange
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const openFolder = (fileId: string, fileName: string) => {
+  const openFolder = (fileId: string) => {
     setCurrentFolderId(fileId);
     setFolderStack([...folderStack, fileId]);
   };
@@ -292,14 +432,21 @@ function GoogleDriveDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             Import from Google Drive
           </DialogTitle>
           <DialogDescription className="text-slate-400">
-            Uses the connected channel's OAuth credentials to access Google Drive
+            Files will be downloaded and assigned to the selected channel
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs text-slate-400">Select Channel</label>
-            <Select value={channelId} onValueChange={(v) => { setChannelId(v); setCurrentFolderId("root"); setFolderStack(["root"]); }}>
+            <label className="text-xs text-slate-400">Select Channel (files will be assigned here)</label>
+            <Select
+              value={selectedChannelId}
+              onValueChange={(v) => {
+                setSelectedChannelId(v);
+                setCurrentFolderId("root");
+                setFolderStack(["root"]);
+              }}
+            >
               <SelectTrigger className="bg-slate-900 border-slate-700 text-white">
                 <SelectValue placeholder="Choose a connected channel" />
               </SelectTrigger>
@@ -313,7 +460,7 @@ function GoogleDriveDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             </Select>
           </div>
 
-          {channelId && (
+          {selectedChannelId && (
             <>
               <div className="flex items-center gap-2 text-xs text-slate-400">
                 <FolderOpen className="h-3.5 w-3.5" />
@@ -341,7 +488,7 @@ function GoogleDriveDialog({ open, onOpenChange }: { open: boolean; onOpenChange
                       <div key={file.id} className="flex items-center gap-3 p-3 hover:bg-slate-800/40">
                         {file.mimeType === "application/vnd.google-apps.folder" ? (
                           <button
-                            onClick={() => openFolder(file.id, file.name)}
+                            onClick={() => openFolder(file.id)}
                             className="flex items-center gap-3 flex-1 text-left min-w-0"
                           >
                             <FolderOpen className="h-5 w-5 text-amber-300 shrink-0" />
@@ -381,7 +528,7 @@ function GoogleDriveDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             </>
           )}
 
-          {!channelId && (
+          {!selectedChannelId && (
             <div className="p-8 text-center rounded-lg border border-slate-800 bg-slate-900/40">
               <Cloud className="h-10 w-10 text-slate-700 mx-auto mb-2" />
               <p className="text-sm text-slate-400">
