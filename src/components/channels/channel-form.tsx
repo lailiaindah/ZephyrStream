@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,12 @@ interface ChannelFormProps {
   editingChannel?: any;
 }
 
-export function ChannelForm({ open, onOpenChange, editingChannel }: ChannelFormProps) {
+// Inner form that initializes state from props on mount only (no useEffect)
+function ChannelFormInner({
+  open,
+  onOpenChange,
+  editingChannel,
+}: ChannelFormProps) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(editingChannel?.name || "");
   const [description, setDescription] = useState(editingChannel?.description || "");
@@ -263,5 +268,22 @@ export function ChannelForm({ open, onOpenChange, editingChannel }: ChannelFormP
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Outer wrapper that remounts the inner form when editingChannel changes
+// — avoids stale state when switching between create and edit modes.
+export function ChannelForm({ open, onOpenChange, editingChannel }: ChannelFormProps) {
+  // Use a key based on editingChannel id (or "new") so the inner form
+  // remounts and re-initializes its state cleanly when switching targets.
+  const formKey = editingChannel?.id || "new";
+
+  return (
+    <ChannelFormInner
+      key={formKey}
+      open={open}
+      onOpenChange={onOpenChange}
+      editingChannel={editingChannel}
+    />
   );
 }

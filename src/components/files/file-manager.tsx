@@ -345,6 +345,7 @@ export function FileManager() {
       )}
 
       <GoogleDriveDialog
+        key={channelFilter}
         open={gdriveOpen}
         onOpenChange={setGdriveOpen}
         channelId={channelFilter}

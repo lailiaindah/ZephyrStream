@@ -135,8 +135,12 @@ function buildFFmpegArgs(opts: FFmpegOptions): string[] {
     );
   }
 
+  // Duration limit: place -t AFTER the input file so it acts as an
+  // output option (caps the total stream duration). Placing it before
+  // -i as an input option can interact poorly with -stream_loop -1.
   if (opts.durationSeconds) {
-    args.splice(args.indexOf("-i"), 0, "-t", opts.durationSeconds.toString());
+    const inputFileIndex = args.indexOf("-i") + 2; // skip "-i" and the filename
+    args.splice(inputFileIndex, 0, "-t", opts.durationSeconds.toString());
   }
 
   return args;
@@ -151,8 +155,11 @@ export async function startFFmpegStream(opts: FFmpegOptions): Promise<{
   // Ensure log directory exists
   await fs.mkdir(STREAM_LOG_DIR, { recursive: true });
 
+  // Use timestamp only for the log file name — the FFmpeg PID isn't
+  // known until after spawn, and process.pid here refers to the Next.js
+  // process, not FFmpeg. The logFile path is stored in the DB anyway.
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const logFile = path.join(STREAM_LOG_DIR, `stream_${timestamp}_${process.pid}.log`);
+  const logFile = path.join(STREAM_LOG_DIR, `stream_${timestamp}.log`);
   const logHandle = await fs.open(logFile, "w");
 
   const args = buildFFmpegArgs(opts);

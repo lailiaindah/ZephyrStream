@@ -153,7 +153,6 @@ export function ThumbnailManager({ channelId, channelName }: ThumbnailManagerPro
                   className="relative group rounded-lg overflow-hidden border border-slate-800/60 bg-slate-950/60"
                 >
                   <div className="aspect-video bg-slate-900">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={`/api/thumbnails/${thumb.id}`}
                       alt={thumb.originalName}
