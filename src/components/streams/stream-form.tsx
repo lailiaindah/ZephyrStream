@@ -81,6 +81,7 @@ function StreamFormInner({
   const [privacyStatus, setPrivacyStatus] = useState(editingStream?.privacyStatus || "public");
   const [categoryId, setCategoryId] = useState(editingStream?.categoryId || "22");
   const [tags, setTags] = useState(editingStream?.tags || "");
+  const [playlistId, setPlaylistId] = useState(editingStream?.playlistId || "");
   const [alteredContent, setAlteredContent] = useState(editingStream?.alteredContent || false);
   const [spinnerMode, setSpinnerMode] = useState(editingStream?.spinnerMode || "off");
   const [selectedEmojis, setSelectedEmojis] = useState<string[]>(
@@ -115,6 +116,7 @@ function StreamFormInner({
       privacyStatus,
       categoryId,
       tags,
+      playlistId: playlistId.trim() || null,
       alteredContent,
       spinnerMode,
       spinnerEmojis: selectedEmojis,
@@ -389,6 +391,20 @@ function StreamFormInner({
                   placeholder="music, live, gaming"
                   className="bg-slate-900 border-slate-700 text-white"
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-slate-200">YouTube Playlist ID (optional)</Label>
+                <Input
+                  value={playlistId}
+                  onChange={(e) => setPlaylistId(e.target.value)}
+                  placeholder="PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  className="bg-slate-900 border-slate-700 text-white font-mono text-xs"
+                />
+                <p className="text-[11px] text-slate-500">
+                  Add this broadcast to a YouTube playlist. Find the ID in the playlist URL
+                  (e.g. <code className="text-cyan-300">youtube.com/playlist?list=PL...</code> → use the part after <code className="text-cyan-300">list=</code>)
+                </p>
               </div>
 
               <div className="flex items-center justify-between rounded-lg bg-slate-900/60 border border-slate-800 p-3">
