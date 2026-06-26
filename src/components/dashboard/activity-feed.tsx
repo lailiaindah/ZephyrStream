@@ -76,7 +76,7 @@ export function ActivityFeed({ logs }: { logs: ActivityItem[] }) {
                         <p className="text-xs text-slate-500 mt-0.5">{log.details}</p>
                       )}
                       <p className="text-[10px] text-slate-600 mt-1">
-                        {new Date(log.createdAt).toLocaleString()}
+                        {log.createdAt ? new Date(log.createdAt).toLocaleString() : "—"}
                       </p>
                     </div>
                   </div>

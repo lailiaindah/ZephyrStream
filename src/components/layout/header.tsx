@@ -260,7 +260,7 @@ export function Header({ user, title, subtitle, actions, onNavigate, onLogout }:
                       </div>
                       <p className="text-xs text-slate-200">{log.message}</p>
                       <p className="text-[10px] text-slate-600 mt-0.5">
-                        {new Date(log.createdAt).toLocaleString()}
+                        {log.createdAt ? new Date(log.createdAt).toLocaleString() : "—"}
                       </p>
                     </div>
                   ))}

@@ -199,7 +199,7 @@ export function ThumbnailManager({ channelId, channelName }: ThumbnailManagerPro
                       {thumb.originalName}
                     </p>
                     <p className="text-[9px] text-slate-500">
-                      {(thumb.size / 1024).toFixed(0)} KB
+                      {thumb.size != null ? `${(thumb.size / 1024).toFixed(0)} KB` : "—"}
                     </p>
                   </div>
                   <button
