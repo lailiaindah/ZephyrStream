@@ -55,11 +55,23 @@ export const CHANNEL_STATUS_META: Record<string, { label: string; color: string;
   error: { label: "Error", color: "text-rose-300", bg: "bg-rose-900/40 border-rose-700" },
 };
 
-// Privacy options
+// Privacy options — these now represent POST-LIVE replay status
+// (live broadcast itself is always public; this controls the replay visibility)
 export const PRIVACY_OPTIONS = [
-  { value: "public", label: "Public" },
-  { value: "unlisted", label: "Unlisted" },
-  { value: "private", label: "Private" },
+  { value: "public", label: "Public (replay visible to everyone)" },
+  { value: "unlisted", label: "Unlisted (replay accessible via link only)" },
+  { value: "random_unlisted", label: "Random Unlisted (50% chance unlisted)" },
+];
+
+// Encoder preset choices — re-used in the stream form
+export const PRESET_CHOICES = [
+  { value: "ultrafast", label: "Ultrafast (lowest CPU)" },
+  { value: "superfast", label: "Superfast" },
+  { value: "veryfast", label: "Veryfast (recommended)" },
+  { value: "faster", label: "Faster" },
+  { value: "fast", label: "Fast" },
+  { value: "medium", label: "Medium (balanced)" },
+  { value: "slow", label: "Slow (high quality)" },
 ];
 
 // Spinner modes for title anti-spam

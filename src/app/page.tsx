@@ -121,6 +121,8 @@ export default function Home() {
                 user={user}
                 title="Dashboard"
                 subtitle="Monitor your VPS and live streams in real-time"
+                onNavigate={setView}
+                onLogout={handleLogout}
                 actions={
                   <Button
                     variant="outline"
@@ -262,6 +264,8 @@ export default function Home() {
                 user={user}
                 title="Channels"
                 subtitle="Manage multi-channel YouTube accounts with separate Google Cloud credentials"
+                onNavigate={setView}
+                onLogout={handleLogout}
               />
               <ChannelList />
             </div>
@@ -273,6 +277,8 @@ export default function Home() {
                 user={user}
                 title="Streams"
                 subtitle="Create and manage live streams using YouTube stream keys"
+                onNavigate={setView}
+                onLogout={handleLogout}
               />
               <StreamList />
             </div>
@@ -284,6 +290,8 @@ export default function Home() {
                 user={user}
                 title="Files"
                 subtitle="Upload video files from PC or import from Google Drive"
+                onNavigate={setView}
+                onLogout={handleLogout}
               />
               <FileManager />
             </div>
@@ -295,6 +303,8 @@ export default function Home() {
                 user={user}
                 title="Activity Log"
                 subtitle="Recent system and user activity"
+                onNavigate={setView}
+                onLogout={handleLogout}
               />
               <ActivityFeed logs={dashboardData?.recentLogs || []} />
             </div>
@@ -306,6 +316,8 @@ export default function Home() {
                 user={user}
                 title="Settings"
                 subtitle="Manage your account and system configuration"
+                onNavigate={setView}
+                onLogout={handleLogout}
               />
               <SettingsView user={user} />
             </div>

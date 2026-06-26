@@ -50,10 +50,11 @@ export async function PATCH(
     const body = await req.json();
     const allowedFields = [
       "name", "description", "channelId", "streamKey", "rtmpUrl",
-      "sourceType", "sourcePath", "sourceFileIds", "shuffle", "durationMinutes",
+      "sourceType", "sourcePath", "sourceFileIds", "shuffle",
+      "minHours", "maxHours",
       "startAt", "encoder", "copyMode", "videoBitrate", "audioBitrate",
       "resolution", "fps", "preset", "privacyStatus", "categoryId", "tags",
-      "playlistId", "madeForKids", "alteredContent", "spinnerMode", "spinnerEmojis",
+      "playlistId", "alteredContent", "spinnerMode", "spinnerEmojis",
       "autoReschedule", "status",
     ];
 

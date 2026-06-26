@@ -132,13 +132,14 @@ model Stream {
   broadcastId     String?   // Set when broadcast is created via YouTube API
   streamId        String?   // Bound liveStream id
   broadcastStatus String?   // created | ready | testing | live | complete | revoked
-  privacyStatus   String    @default("public") // public | unlisted | private
+  // Post-live replay privacy: public | unlisted | random_unlisted
+  // (live broadcast itself is always public; this controls replay visibility)
+  privacyStatus   String    @default("public")
   categoryId      String    @default("22") // People & Blogs
   tags            String?   // Comma-separated
   playlistId      String?
   thumbnailUrl    String?
-  madeForKids     Boolean   @default(false)
-  alteredContent  Boolean   @default(false)
+  alteredContent  Boolean   @default(false) // YouTube "altered/synthetic content" flag
 
   // Video source
   sourceType      String    @default("local") // local | gdrive
@@ -147,9 +148,10 @@ model Stream {
   shuffle         Boolean   @default(true)
   loopUntilDuration Boolean @default(true)
 
-  // Schedule
+  // Schedule — duration is randomized between minHours and maxHours
   startAt         DateTime?
-  durationMinutes Int       @default(180) // Stream duration in minutes
+  minHours        Float     @default(2.0)  // Minimum stream duration in hours
+  maxHours        Float     @default(4.0)  // Maximum stream duration in hours
   autoReschedule  Boolean   @default(false) // Auto-reschedule next day
   autoDeleteAfterMinutes Int @default(30)
 

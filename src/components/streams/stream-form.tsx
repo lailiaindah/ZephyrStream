@@ -23,8 +23,9 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ENCODER_CHOICES, PRIVACY_OPTIONS, SPINNER_MODES, YOUTUBE_CATEGORIES, EMOJI_CATALOG } from "@/lib/constants";
-import { Loader2, Youtube, Key, FileVideo, Settings2, Sparkles } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ENCODER_CHOICES, PRIVACY_OPTIONS, SPINNER_MODES, YOUTUBE_CATEGORIES, EMOJI_CATALOG, PRESET_CHOICES } from "@/lib/constants";
+import { Loader2, Youtube, Key, FileVideo, Settings2, Sparkles, Type, Shuffle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface StreamFormProps {
@@ -33,6 +34,8 @@ interface StreamFormProps {
   editingStream?: any;
   onSubmit: (data: any) => void;
   isLoading?: boolean;
+  // When provided, restrict the channel selector to this channel only
+  lockedChannelId?: string;
 }
 
 // Inner form that initializes state from props on mount only (no useEffect)
@@ -42,29 +45,24 @@ function StreamFormInner({
   editingStream,
   onSubmit,
   isLoading,
+  lockedChannelId,
   channelsData,
   filesData,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  editingStream?: any;
-  onSubmit: (data: any) => void;
-  isLoading?: boolean;
-  channelsData: any[];
-  filesData: any[];
-}) {
+}: StreamFormProps & { channelsData: any[]; filesData: any[] }) {
   const [name, setName] = useState(editingStream?.name || "");
   const [description, setDescription] = useState(editingStream?.description || "");
-  const [channelId, setChannelId] = useState<string>(editingStream?.channelId || "");
-  const [streamKey, setStreamKey] = useState(editingStream?.streamKey || "");
-  const [sourceType, setSourceType] = useState<"local" | "uploaded">(
-    editingStream?.sourceType === "local" ? "local" : "uploaded"
+  const [channelId, setChannelId] = useState<string>(
+    lockedChannelId || editingStream?.channelId || ""
   );
+  const [streamKey, setStreamKey] = useState(editingStream?.streamKey || "");
+  const [sourceType, setSourceType] = useState<"local" | "uploaded">("uploaded");
   const [sourcePath, setSourcePath] = useState(editingStream?.sourcePath || "");
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>(
     editingStream?.sourceFileIds ? JSON.parse(editingStream.sourceFileIds) : []
   );
-  const [durationMinutes, setDurationMinutes] = useState(editingStream?.durationMinutes || 180);
+  const [shuffle, setShuffle] = useState(editingStream?.shuffle ?? true);
+  const [minHours, setMinHours] = useState(editingStream?.minHours ?? 2);
+  const [maxHours, setMaxHours] = useState(editingStream?.maxHours ?? 4);
   const [encoder, setEncoder] = useState(editingStream?.encoder || "auto");
   const [copyMode, setCopyMode] = useState(editingStream?.copyMode || false);
   const [videoBitrate, setVideoBitrate] = useState(editingStream?.videoBitrate || "4500k");
@@ -75,11 +73,14 @@ function StreamFormInner({
   const [privacyStatus, setPrivacyStatus] = useState(editingStream?.privacyStatus || "public");
   const [categoryId, setCategoryId] = useState(editingStream?.categoryId || "22");
   const [tags, setTags] = useState(editingStream?.tags || "");
-  const [madeForKids, setMadeForKids] = useState(editingStream?.madeForKids || false);
+  const [alteredContent, setAlteredContent] = useState(editingStream?.alteredContent || false);
   const [spinnerMode, setSpinnerMode] = useState(editingStream?.spinnerMode || "off");
   const [selectedEmojis, setSelectedEmojis] = useState<string[]>(
     editingStream?.spinnerEmojis ? JSON.parse(editingStream.spinnerEmojis) : []
   );
+
+  // Fetch user's files (filtered by channelId when locked)
+  // — actually data is now passed via props from the outer wrapper
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,7 +92,9 @@ function StreamFormInner({
       sourceType: sourceType === "local" ? "local" : "uploaded",
       sourcePath: sourceType === "local" ? sourcePath : null,
       sourceFileIds: sourceType === "uploaded" ? selectedFileIds : null,
-      durationMinutes: Number(durationMinutes),
+      shuffle,
+      minHours: Number(minHours),
+      maxHours: Number(maxHours),
       encoder,
       copyMode,
       videoBitrate,
@@ -102,7 +105,7 @@ function StreamFormInner({
       privacyStatus,
       categoryId,
       tags,
-      madeForKids,
+      alteredContent,
       spinnerMode,
       spinnerEmojis: selectedEmojis,
     });
@@ -120,6 +123,10 @@ function StreamFormInner({
     );
   };
 
+  const insertVariable = (token: string) => {
+    setDescription((prev) => `${prev}${token}`);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-slate-950 border-slate-800 text-white max-w-3xl max-h-[92vh] overflow-y-auto">
@@ -129,7 +136,7 @@ function StreamFormInner({
             {editingStream ? "Edit Stream" : "Create New Stream"}
           </DialogTitle>
           <DialogDescription className="text-slate-400">
-            Configure a new live stream. Streaming uses the YouTube stream key (not the API) — saving your Google Cloud quota.
+            Configure a live stream. Streaming uses the YouTube stream key (not the API) — saving your Google Cloud quota.
           </DialogDescription>
         </DialogHeader>
 
@@ -163,47 +170,115 @@ function StreamFormInner({
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-slate-200">Description</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-slate-200">Description</Label>
+                  <div className="flex flex-wrap gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => insertVariable("[title]")}
+                      className="h-6 px-2 text-[10px] border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10"
+                    >
+                      + [title]
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => insertVariable("[date]")}
+                      className="h-6 px-2 text-[10px] border-slate-700 text-slate-300 hover:bg-slate-800"
+                    >
+                      + [date]
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => insertVariable("[time]")}
+                      className="h-6 px-2 text-[10px] border-slate-700 text-slate-300 hover:bg-slate-800"
+                    >
+                      + [time]
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => insertVariable("[datetime]")}
+                      className="h-6 px-2 text-[10px] border-slate-700 text-slate-300 hover:bg-slate-800"
+                    >
+                      + [datetime]
+                    </Button>
+                  </div>
+                </div>
                 <Textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Stream description..."
-                  rows={3}
+                  placeholder="Stream description. Click [title] above to insert the current stream title..."
+                  rows={4}
                   className="bg-slate-900 border-slate-700 text-white"
                 />
+                <p className="text-[11px] text-slate-500">
+                  Variables are replaced at stream time. <code className="text-cyan-300">[title]</code> uses the title picked from this channel&apos;s title list.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-slate-200">YouTube Channel (optional)</Label>
-                  <Select value={channelId || "_none"} onValueChange={(v) => setChannelId(v === "_none" ? "" : v)}>
-                    <SelectTrigger className="bg-slate-900 border-slate-700 text-white">
-                      <SelectValue placeholder="No channel" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-slate-900 border-slate-700">
-                      <SelectItem value="_none">No channel</SelectItem>
-                      {channelsData?.map((ch) => (
-                        <SelectItem key={ch.id} value={ch.id}>
-                          {ch.name} {ch.status === "active" ? "✓" : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-slate-200">YouTube Channel</Label>
+                  {lockedChannelId ? (
+                    <Input
+                      value={channelsData?.find((c) => c.id === lockedChannelId)?.name || "Locked channel"}
+                      disabled
+                      className="bg-slate-900/50 border-slate-800 text-slate-400"
+                    />
+                  ) : (
+                    <Select value={channelId || "_none"} onValueChange={(v) => setChannelId(v === "_none" ? "" : v)}>
+                      <SelectTrigger className="bg-slate-900 border-slate-700 text-white">
+                        <SelectValue placeholder="No channel" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-900 border-slate-700">
+                        <SelectItem value="_none">No channel</SelectItem>
+                        {channelsData?.map((ch) => (
+                          <SelectItem key={ch.id} value={ch.id}>
+                            {ch.name} {ch.status === "active" ? "✓" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <p className="text-[11px] text-slate-500">
                     If selected, broadcast will be auto-created via API
                   </p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-slate-200">Duration (minutes)</Label>
-                  <Input
-                    type="number"
-                    value={durationMinutes}
-                    onChange={(e) => setDurationMinutes(Number(e.target.value))}
-                    min={1}
-                    max={1440}
-                    className="bg-slate-900 border-slate-700 text-white"
-                  />
+                  <Label className="text-slate-200">Duration (hours, randomized)</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={minHours}
+                      onChange={(e) => setMinHours(Number(e.target.value))}
+                      min={0.5}
+                      max={24}
+                      step={0.5}
+                      className="bg-slate-900 border-slate-700 text-white"
+                    />
+                    <span className="text-slate-400 text-sm">to</span>
+                    <Input
+                      type="number"
+                      value={maxHours}
+                      onChange={(e) => setMaxHours(Number(e.target.value))}
+                      min={0.5}
+                      max={48}
+                      step={0.5}
+                      className="bg-slate-900 border-slate-700 text-white"
+                    />
+                    <span className="text-slate-400 text-sm">hrs</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Stream duration will be randomized between these values
+                  </p>
                 </div>
               </div>
 
@@ -227,7 +302,7 @@ function StreamFormInner({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label className="text-slate-200">Privacy</Label>
+                  <Label className="text-slate-200">Post-Live Replay Status</Label>
                   <Select value={privacyStatus} onValueChange={setPrivacyStatus}>
                     <SelectTrigger className="bg-slate-900 border-slate-700 text-white">
                       <SelectValue />
@@ -238,6 +313,9 @@ function StreamFormInner({
                       ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-[11px] text-slate-500">
+                    Live event is always public; this controls the replay
+                  </p>
                 </div>
 
                 <div className="space-y-1.5">
@@ -267,10 +345,12 @@ function StreamFormInner({
 
               <div className="flex items-center justify-between rounded-lg bg-slate-900/60 border border-slate-800 p-3">
                 <div>
-                  <Label className="text-slate-200 cursor-pointer">Made for Kids</Label>
-                  <p className="text-[11px] text-slate-500">COPPA compliance flag</p>
+                  <Label className="text-slate-200 cursor-pointer">Altered Content</Label>
+                  <p className="text-[11px] text-slate-500">
+                    Mark broadcast as containing altered or synthetic content (YouTube policy)
+                  </p>
                 </div>
-                <Switch checked={madeForKids} onCheckedChange={setMadeForKids} />
+                <Switch checked={alteredContent} onCheckedChange={setAlteredContent} />
               </div>
             </TabsContent>
 
@@ -309,6 +389,17 @@ function StreamFormInner({
                 </div>
               </div>
 
+              <div className="flex items-center justify-between rounded-lg bg-slate-900/60 border border-slate-800 p-3">
+                <div className="flex items-center gap-2">
+                  <Shuffle className="h-4 w-4 text-cyan-300" />
+                  <div>
+                    <Label className="text-slate-200 cursor-pointer">Shuffle Video Order</Label>
+                    <p className="text-[11px] text-slate-500">Randomize playback order each stream</p>
+                  </div>
+                </div>
+                <Switch checked={shuffle} onCheckedChange={setShuffle} />
+              </div>
+
               {sourceType === "local" ? (
                 <div className="space-y-1.5">
                   <Label className="text-slate-200">Local Folder Path on VPS</Label>
@@ -324,13 +415,22 @@ function StreamFormInner({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <Label className="text-slate-200">Select Uploaded Files</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-slate-200">Select Uploaded Files</Label>
+                    {selectedFileIds.length > 0 && (
+                      <Badge variant="outline" className="border-cyan-500/40 text-cyan-300">
+                        {selectedFileIds.length} selected
+                      </Badge>
+                    )}
+                  </div>
                   <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-800 bg-slate-900/50">
                     {!filesData || filesData.length === 0 ? (
                       <div className="p-6 text-center">
                         <FileVideo className="h-8 w-8 text-slate-700 mx-auto mb-2" />
                         <p className="text-xs text-slate-500">
-                          No files uploaded yet. Go to the Files tab to upload.
+                          {channelId
+                            ? "No files uploaded to this channel yet."
+                            : "No files uploaded yet. Go to the Files tab to upload."}
                         </p>
                       </div>
                     ) : (
@@ -363,11 +463,6 @@ function StreamFormInner({
                       ))
                     )}
                   </div>
-                  {selectedFileIds.length > 0 && (
-                    <p className="text-xs text-cyan-300">
-                      {selectedFileIds.length} file(s) selected
-                    </p>
-                  )}
                 </div>
               )}
             </TabsContent>
@@ -446,13 +541,9 @@ function StreamFormInner({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-900 border-slate-700">
-                    <SelectItem value="ultrafast">Ultrafast (lowest CPU)</SelectItem>
-                    <SelectItem value="superfast">Superfast</SelectItem>
-                    <SelectItem value="veryfast">Veryfast (recommended)</SelectItem>
-                    <SelectItem value="faster">Faster</SelectItem>
-                    <SelectItem value="fast">Fast</SelectItem>
-                    <SelectItem value="medium">Medium (balanced)</SelectItem>
-                    <SelectItem value="slow">Slow (high quality)</SelectItem>
+                    {PRESET_CHOICES.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -542,8 +633,15 @@ function StreamFormInner({
 
 // Outer wrapper that fetches shared data and remounts the inner form
 // when editingStream changes — avoids setState-in-effect warnings.
-export function StreamForm({ open, onOpenChange, editingStream, onSubmit, isLoading }: StreamFormProps) {
-  // Fetch user's channels
+export function StreamForm({
+  open,
+  onOpenChange,
+  editingStream,
+  onSubmit,
+  isLoading,
+  lockedChannelId,
+}: StreamFormProps) {
+  // Fetch user's channels (only when not locked)
   const { data: channelsData } = useQuery({
     queryKey: ["channels"],
     queryFn: async () => {
@@ -551,13 +649,17 @@ export function StreamForm({ open, onOpenChange, editingStream, onSubmit, isLoad
       const data = await res.json();
       return (data.channels as any[]) || [];
     },
+    enabled: !lockedChannelId,
   });
 
-  // Fetch user's files
+  // Fetch user's files (for the source picker)
   const { data: filesData } = useQuery({
-    queryKey: ["files"],
+    queryKey: ["files", lockedChannelId || "all"],
     queryFn: async () => {
-      const res = await fetch("/api/files");
+      const url = lockedChannelId
+        ? `/api/files?channelId=${lockedChannelId}`
+        : "/api/files";
+      const res = await fetch(url);
       const data = await res.json();
       return (data.files as any[]) || [];
     },
@@ -575,6 +677,7 @@ export function StreamForm({ open, onOpenChange, editingStream, onSubmit, isLoad
       editingStream={editingStream}
       onSubmit={onSubmit}
       isLoading={isLoading}
+      lockedChannelId={lockedChannelId}
       channelsData={channelsData || []}
       filesData={filesData || []}
     />

@@ -24,19 +24,37 @@ import {
   FileVideo,
   Clock,
   ScrollText,
+  Copy,
+  Youtube,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 export function StreamList() {
   const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [logStreamId, setLogStreamId] = useState<string | null>(null);
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["streams"],
+  // Fetch channels for the filter
+  const { data: channelsData } = useQuery({
+    queryKey: ["channels"],
     queryFn: async () => {
-      const res = await fetch("/api/streams");
+      const res = await fetch("/api/channels");
+      const data = await res.json();
+      return data.channels as any[];
+    },
+  });
+
+  // Fetch streams (filtered by selected channel)
+  const { data, isLoading } = useQuery({
+    queryKey: ["streams", selectedChannelId],
+    queryFn: async () => {
+      const url = selectedChannelId
+        ? `/api/streams?channelId=${selectedChannelId}`
+        : "/api/streams";
+      const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       return data.streams as any[];
@@ -44,8 +62,20 @@ export function StreamList() {
     refetchInterval: 5000,
   });
 
+  // Fetch stream counts per channel (for the channel selector badges)
+  const { data: allStreams } = useQuery({
+    queryKey: ["streams", "all-for-counts"],
+    queryFn: async () => {
+      const res = await fetch("/api/streams");
+      const data = await res.json();
+      return data.streams as any[];
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: async (payload: any) => {
+      // Force the channelId to the selected one if locked
+      if (selectedChannelId) payload.channelId = selectedChannelId;
       const res = await fetch("/api/streams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -99,6 +129,26 @@ export function StreamList() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const duplicateMutation = useMutation({
+    mutationFn: async (sourceStream: any) => {
+      // Send a create request with duplicateFrom — backend copies all fields
+      const res = await fetch("/api/streams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ duplicateFrom: sourceStream.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Stream duplicated");
+      queryClient.invalidateQueries({ queryKey: ["streams"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const startMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/streams/${id}/start`, { method: "POST" });
@@ -137,13 +187,25 @@ export function StreamList() {
     }
   };
 
+  // Count streams per channel
+  const streamCounts: Record<string, number> = {};
+  (allStreams || []).forEach((s) => {
+    if (s.channelId) {
+      streamCounts[s.channelId] = (streamCounts[s.channelId] || 0) + 1;
+    }
+  });
+  const unassignedCount = (allStreams || []).filter((s) => !s.channelId).length;
+  const totalCount = (allStreams || []).length;
+
+  const selectedChannel = channelsData?.find((c) => c.id === selectedChannelId);
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold text-white">Live Streams</h2>
           <p className="text-sm text-slate-400">
-            Stream video files to YouTube using stream keys (saves API quota)
+            Click a channel below to filter — streams are organized per channel
           </p>
         </div>
         <Button
@@ -158,6 +220,62 @@ export function StreamList() {
         </Button>
       </div>
 
+      {/* Channel filter pills */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => setSelectedChannelId(null)}
+          className={cn(
+            "flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all",
+            !selectedChannelId
+              ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
+              : "bg-slate-900/40 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600"
+          )}
+        >
+          <Radio className="h-3 w-3" />
+          All ({totalCount})
+        </button>
+        <button
+          onClick={() => setSelectedChannelId("unassigned")}
+          className={cn(
+            "flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all",
+            selectedChannelId === "unassigned"
+              ? "bg-slate-500/30 border-slate-500 text-slate-200"
+              : "bg-slate-900/40 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600"
+          )}
+        >
+          <FileVideo className="h-3 w-3" />
+          Unassigned ({unassignedCount})
+        </button>
+        {(channelsData || []).map((ch) => (
+          <button
+            key={ch.id}
+            onClick={() => setSelectedChannelId(ch.id)}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition-all",
+              selectedChannelId === ch.id
+                ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-300"
+                : "bg-slate-900/40 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600"
+            )}
+          >
+            <Youtube className="h-3 w-3" />
+            {ch.name}
+            <span className="text-[10px] opacity-70">({streamCounts[ch.id] || 0})</span>
+          </button>
+        ))}
+      </div>
+
+      {selectedChannel && (
+        <div className="text-xs text-cyan-300 bg-cyan-500/5 border border-cyan-500/20 rounded-md px-3 py-2">
+          Showing streams for <strong>{selectedChannel.name}</strong>. New streams will be assigned to this channel.
+        </div>
+      )}
+      {selectedChannelId === "unassigned" && (
+        <div className="text-xs text-slate-400 bg-slate-800/40 border border-slate-700 rounded-md px-3 py-2">
+          Showing streams with no channel assigned.
+        </div>
+      )}
+
+      {/* Stream list */}
       {isLoading ? (
         <div className="grid gap-4 md:grid-cols-2">
           {[1, 2, 3, 4].map((i) => (
@@ -169,9 +287,17 @@ export function StreamList() {
       ) : !data || data.length === 0 ? (
         <Card className="border-slate-800/60 bg-slate-900/40 p-12 text-center">
           <Radio className="h-12 w-12 text-slate-700 mx-auto mb-3" />
-          <h3 className="text-base font-semibold text-white mb-1">No streams yet</h3>
+          <h3 className="text-base font-semibold text-white mb-1">
+            {selectedChannel
+              ? `No streams for ${selectedChannel.name} yet`
+              : selectedChannelId === "unassigned"
+              ? "No unassigned streams"
+              : "No streams yet"}
+          </h3>
           <p className="text-sm text-slate-400 mb-4">
-            Create your first stream to start broadcasting to YouTube
+            {selectedChannel
+              ? "Create a stream for this channel to start broadcasting"
+              : "Create your first stream to start broadcasting to YouTube"}
           </p>
           <Button
             onClick={() => {
@@ -181,7 +307,7 @@ export function StreamList() {
             className="bg-gradient-to-r from-cyan-500 to-emerald-500 text-slate-950"
           >
             <Plus className="h-4 w-4 mr-2" />
-            Create Your First Stream
+            Create Stream
           </Button>
         </Card>
       ) : (
@@ -205,7 +331,7 @@ export function StreamList() {
                       <h3 className="text-sm font-semibold text-white truncate">{stream.name}</h3>
                       <p className="text-xs text-slate-500 truncate">
                         {stream.channel?.name || "No channel"} •{" "}
-                        {stream.durationMinutes}m
+                        {stream.minHours}-{stream.maxHours}h
                       </p>
                     </div>
                   </div>
@@ -216,7 +342,7 @@ export function StreamList() {
                   <div className="rounded-md bg-slate-950/50 border border-slate-800/60 py-2">
                     <FileVideo className="h-3 w-3 text-slate-500 mx-auto mb-0.5" />
                     <p className="text-[10px] text-slate-500 uppercase">
-                      {stream.sourceType}
+                      {stream.sourceType === "local" ? "path" : "files"}
                     </p>
                   </div>
                   <div className="rounded-md bg-slate-950/50 border border-slate-800/60 py-2">
@@ -284,6 +410,20 @@ export function StreamList() {
                   <Button
                     size="sm"
                     variant="outline"
+                    onClick={() => duplicateMutation.mutate(stream)}
+                    disabled={duplicateMutation.isPending}
+                    className="border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10"
+                  >
+                    {duplicateMutation.isPending && duplicateMutation.variables?.id === stream.id ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    Copy
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => setLogStreamId(stream.id)}
                     disabled={!stream.logFile}
                     className="border-slate-700 text-slate-300 hover:bg-slate-800"
@@ -316,6 +456,7 @@ export function StreamList() {
         editingStream={editing}
         onSubmit={handleSubmit}
         isLoading={createMutation.isPending || updateMutation.isPending}
+        lockedChannelId={selectedChannelId && selectedChannelId !== "unassigned" ? selectedChannelId : undefined}
       />
 
       <LogViewerDialog streamId={logStreamId} onClose={() => setLogStreamId(null)} />

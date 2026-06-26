@@ -13,7 +13,6 @@ import {
   Youtube,
   Plus,
   Trash2,
-  RefreshCw,
   Pencil,
   Video,
   Loader2,
@@ -21,6 +20,7 @@ import {
   FileVideo,
   Type,
   Image as ImageIcon,
+  Shuffle as ShuffleIcon,
 } from "lucide-react";
 
 export function ChannelList() {
@@ -55,19 +55,8 @@ export function ChannelList() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const syncMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/channels/${id}/sync`, { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      return data;
-    },
-    onSuccess: (data) => {
-      toast.success(`Synced: ${data.channelInfo?.title || "Channel updated"}`);
-      queryClient.invalidateQueries({ queryKey: ["channels"] });
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
+  // Sync removed — fetching subscriber/view/video counts burns API quota
+  // every time it runs. Channel info is only fetched ONCE on initial connect.
 
   // Show detail view when a channel is selected
   if (detailChannelId) {
@@ -186,27 +175,14 @@ export function ChannelList() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => syncMutation.mutate(channel.id)}
-                    disabled={syncMutation.isPending || channel.status !== "active"}
-                    className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
-                  >
-                    {syncMutation.isPending && syncMutation.variables === channel.id ? (
-                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-3.5 w-3.5 mr-1" />
-                    )}
-                    Sync
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
                     onClick={() => {
                       setEditing(channel);
                       setFormOpen(true);
                     }}
-                    className="border-slate-700 text-slate-300 hover:bg-slate-800"
+                    className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800"
                   >
-                    <Pencil className="h-3.5 w-3.5" />
+                    <Pencil className="h-3.5 w-3.5 mr-1" />
+                    Edit
                   </Button>
                   <Button
                     size="sm"
@@ -368,6 +344,24 @@ function ChannelFileManager({
     e.target.value = "";
   };
 
+  const shuffleFilesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/files/shuffle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success(`Shuffled ${data.count} files — order randomized for next stream`);
+      queryClient.invalidateQueries({ queryKey: ["files", channelId] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   return (
     <Card className="border-slate-800/60 bg-slate-900/40">
       <div className="p-5">
@@ -383,19 +377,36 @@ function ChannelFileManager({
               </p>
             </div>
           </div>
-          <Button
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadMutation.isPending}
-            className="bg-gradient-to-r from-amber-500 to-cyan-500 hover:from-amber-400 hover:to-cyan-400 text-slate-950"
-          >
-            {uploadMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-            ) : (
-              <Plus className="h-3.5 w-3.5 mr-1" />
-            )}
-            Upload
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => shuffleFilesMutation.mutate()}
+              disabled={shuffleFilesMutation.isPending || !files?.length}
+              className="border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+              title="Shuffle file playback order"
+            >
+              {shuffleFilesMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              ) : (
+                <ShuffleIcon className="h-3.5 w-3.5 mr-1" />
+              )}
+              Shuffle
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadMutation.isPending}
+              className="bg-gradient-to-r from-amber-500 to-cyan-500 hover:from-amber-400 hover:to-cyan-400 text-slate-950"
+            >
+              {uploadMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              ) : (
+                <Plus className="h-3.5 w-3.5 mr-1" />
+              )}
+              Upload
+            </Button>
+          </div>
           <input
             ref={fileInputRef}
             type="file"

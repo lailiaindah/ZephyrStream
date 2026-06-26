@@ -12,6 +12,7 @@ import {
   Loader2,
   Image as ImageIcon,
   Upload,
+  Shuffle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -87,6 +88,22 @@ export function ThumbnailManager({ channelId, channelName }: ThumbnailManagerPro
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const shuffleMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/thumbnails/shuffle?channelId=${channelId}`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success(`Shuffled ${data.count} thumbnails`);
+      queryClient.invalidateQueries({ queryKey: ["thumbnails", channelId] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -109,19 +126,36 @@ export function ThumbnailManager({ channelId, channelName }: ThumbnailManagerPro
               </p>
             </div>
           </div>
-          <Button
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploadMutation.isPending}
-            className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950"
-          >
-            {uploadMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-            ) : (
-              <Upload className="h-3.5 w-3.5 mr-1" />
-            )}
-            Upload
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => shuffleMutation.mutate()}
+              disabled={shuffleMutation.isPending || !thumbnails?.length}
+              className="border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+              title="Shuffle thumbnail order"
+            >
+              {shuffleMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              ) : (
+                <Shuffle className="h-3.5 w-3.5 mr-1" />
+              )}
+              Shuffle
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadMutation.isPending}
+              className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950"
+            >
+              {uploadMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              ) : (
+                <Upload className="h-3.5 w-3.5 mr-1" />
+              )}
+              Upload
+            </Button>
+          </div>
           <input
             ref={fileInputRef}
             type="file"

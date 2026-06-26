@@ -34,6 +34,7 @@ import {
   Upload,
   X,
   FileText,
+  Shuffle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -138,6 +139,22 @@ export function TitleManager({ channelId, channelName }: TitleManagerProps) {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const shuffleMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/titles/shuffle?channelId=${channelId}`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success(`Shuffled ${data.count} titles`);
+      queryClient.invalidateQueries({ queryKey: ["titles", channelId] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const toggleMutation = useMutation({
     mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
       const res = await fetch(`/api/titles/${id}`, {
@@ -170,6 +187,21 @@ export function TitleManager({ channelId, channelName }: TitleManagerProps) {
             </div>
           </div>
           <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => shuffleMutation.mutate()}
+              disabled={shuffleMutation.isPending || !titles?.length}
+              className="border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+              title="Shuffle title order"
+            >
+              {shuffleMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              ) : (
+                <Shuffle className="h-3.5 w-3.5 mr-1" />
+              )}
+              Shuffle
+            </Button>
             <Button
               size="sm"
               variant="outline"

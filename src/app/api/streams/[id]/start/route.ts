@@ -83,7 +83,19 @@ export async function POST(
     if (stream.channelId && stream.channel?.status === "active") {
       try {
         const startAt = stream.startAt || new Date();
-        const endAt = new Date(startAt.getTime() + stream.durationMinutes * 60 * 1000);
+        // Randomize duration between minHours and maxHours
+        const minSec = stream.minHours * 3600;
+        const maxSec = stream.maxHours * 3600;
+        const randomSec = minSec + Math.random() * (maxSec - minSec);
+        const endAt = new Date(startAt.getTime() + randomSec * 1000);
+
+        // Resolve privacy: live broadcast is always public; the stored
+        // privacyStatus controls the REPLAY visibility (post-live).
+        // random_unlisted randomly picks unlisted for the replay.
+        let replayPrivacy = stream.privacyStatus;
+        if (replayPrivacy === "random_unlisted") {
+          replayPrivacy = Math.random() < 0.5 ? "unlisted" : "public";
+        }
 
         const { broadcastId, streamId: ytStreamId } = await createBroadcast(
           stream.channelId,
@@ -92,7 +104,8 @@ export async function POST(
             description: stream.description || "",
             startAt,
             endAt,
-            privacyStatus: stream.privacyStatus,
+            // Live broadcast is always public; replay privacy applied at transition
+            privacyStatus: "public",
             categoryId: stream.categoryId,
             tags: stream.tags ? stream.tags.split(",").map((t) => t.trim()) : undefined,
           }
@@ -104,6 +117,8 @@ export async function POST(
             broadcastId,
             streamId: ytStreamId,
             broadcastStatus: "created",
+            // Persist the resolved replay privacy for the stop handler
+            privacyStatus: replayPrivacy,
           },
         });
       } catch (err: any) {
@@ -113,6 +128,11 @@ export async function POST(
     }
 
     // Start FFmpeg — uses the YouTube stream key (NOT the API)
+    // Randomize the stream duration between minHours and maxHours
+    const minSec = stream.minHours * 3600;
+    const maxSec = stream.maxHours * 3600;
+    const randomDurationSec = Math.round(minSec + Math.random() * (maxSec - minSec));
+
     const { pid, logFile } = await startFFmpegStream({
       streamKey: stream.streamKey,
       rtmpUrl: stream.rtmpUrl,
@@ -124,7 +144,7 @@ export async function POST(
       resolution: stream.resolution,
       fps: stream.fps,
       preset: stream.preset,
-      durationSeconds: stream.durationMinutes * 60,
+      durationSeconds: randomDurationSec,
       logFile: undefined, // Let FFmpeg manager create one
     });
 

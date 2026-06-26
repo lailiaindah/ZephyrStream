@@ -1,17 +1,31 @@
-// GET /api/streams — List user's streams
+// GET /api/streams — List user's streams (optionally filtered by channelId)
 // POST /api/streams — Create a new stream
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { YOUTUBE_RTMP_BASE } from "@/lib/constants";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+    const { searchParams } = new URL(req.url);
+    const channelId = searchParams.get("channelId");
+
+    // Verify channel ownership if channelId provided
+    if (channelId) {
+      const channel = await db.channel.findFirst({
+        where: { id: channelId, userId: user.id },
+      });
+      if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
+    }
+
     const streams = await db.stream.findMany({
-      where: { userId: user.id },
+      where: {
+        userId: user.id,
+        ...(channelId ? { channelId } : {}),
+      },
       orderBy: { createdAt: "desc" },
       include: {
         channel: {
@@ -42,7 +56,8 @@ export async function POST(req: NextRequest) {
       sourcePath,
       sourceFileIds,
       shuffle,
-      durationMinutes,
+      minHours,
+      maxHours,
       startAt,
       encoder,
       copyMode,
@@ -55,14 +70,27 @@ export async function POST(req: NextRequest) {
       categoryId,
       tags,
       playlistId,
-      madeForKids,
       alteredContent,
       spinnerMode,
       spinnerEmojis,
       autoReschedule,
+      // Allow copy/duplicate flow to pass a source stream id
+      duplicateFrom,
     } = body;
 
-    if (!name || !streamKey) {
+    // If duplicating, fetch the source stream first
+    let source: any = null;
+    if (duplicateFrom) {
+      source = await db.stream.findFirst({
+        where: { id: duplicateFrom, userId: user.id },
+      });
+      if (!source) {
+        return NextResponse.json({ error: "Source stream not found" }, { status: 404 });
+      }
+    }
+
+    const finalName = name || (source ? `${source.name} (copy)` : "");
+    if (!finalName || !(streamKey || source?.streamKey)) {
       return NextResponse.json(
         { error: "Stream name and YouTube stream key are required" },
         { status: 400 }
@@ -82,33 +110,33 @@ export async function POST(req: NextRequest) {
     const stream = await db.stream.create({
       data: {
         userId: user.id,
-        channelId: channelId || null,
-        name,
-        description: description || null,
-        streamKey,
-        rtmpUrl: rtmpUrl || YOUTUBE_RTMP_BASE,
-        sourceType: sourceType || "local",
-        sourcePath: sourcePath || null,
-        sourceFileIds: sourceFileIds ? JSON.stringify(sourceFileIds) : null,
-        shuffle: shuffle ?? true,
-        durationMinutes: durationMinutes || 180,
+        channelId: channelId || source?.channelId || null,
+        name: finalName,
+        description: description !== undefined ? description : source?.description || null,
+        streamKey: streamKey || source?.streamKey,
+        rtmpUrl: rtmpUrl || source?.rtmpUrl || YOUTUBE_RTMP_BASE,
+        sourceType: sourceType || source?.sourceType || "local",
+        sourcePath: sourcePath || source?.sourcePath || null,
+        sourceFileIds: sourceFileIds || source?.sourceFileIds || null,
+        shuffle: shuffle ?? source?.shuffle ?? true,
+        minHours: minHours ?? source?.minHours ?? 2.0,
+        maxHours: maxHours ?? source?.maxHours ?? 4.0,
         startAt: startAt ? new Date(startAt) : null,
-        encoder: encoder || "auto",
-        copyMode: copyMode ?? false,
-        videoBitrate: videoBitrate || "4500k",
-        audioBitrate: audioBitrate || "160k",
-        resolution: resolution || "1920x1080",
-        fps: fps || 30,
-        preset: preset || "veryfast",
-        privacyStatus: privacyStatus || "public",
-        categoryId: categoryId || "22",
-        tags: tags || null,
-        playlistId: playlistId || null,
-        madeForKids: madeForKids ?? false,
-        alteredContent: alteredContent ?? false,
-        spinnerMode: spinnerMode || "off",
-        spinnerEmojis: spinnerEmojis ? JSON.stringify(spinnerEmojis) : null,
-        autoReschedule: autoReschedule ?? false,
+        encoder: encoder || source?.encoder || "auto",
+        copyMode: copyMode ?? source?.copyMode ?? false,
+        videoBitrate: videoBitrate || source?.videoBitrate || "4500k",
+        audioBitrate: audioBitrate || source?.audioBitrate || "160k",
+        resolution: resolution || source?.resolution || "1920x1080",
+        fps: fps || source?.fps || 30,
+        preset: preset || source?.preset || "veryfast",
+        privacyStatus: privacyStatus || source?.privacyStatus || "public",
+        categoryId: categoryId || source?.categoryId || "22",
+        tags: tags || source?.tags || null,
+        playlistId: playlistId || source?.playlistId || null,
+        alteredContent: alteredContent ?? source?.alteredContent ?? false,
+        spinnerMode: spinnerMode || source?.spinnerMode || "off",
+        spinnerEmojis: spinnerEmojis || source?.spinnerEmojis || null,
+        autoReschedule: autoReschedule ?? source?.autoReschedule ?? false,
         status: "scheduled",
       },
     });
@@ -118,7 +146,9 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         level: "info",
         category: "stream",
-        message: `Stream created: ${name}`,
+        message: duplicateFrom
+          ? `Stream duplicated: ${finalName}`
+          : `Stream created: ${finalName}`,
         details: `Stream ID: ${stream.id}`,
       },
     });
