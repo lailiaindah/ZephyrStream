@@ -25,7 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { ENCODER_CHOICES, PRIVACY_OPTIONS, SPINNER_MODES, YOUTUBE_CATEGORIES, EMOJI_CATALOG, PRESET_CHOICES } from "@/lib/constants";
-import { Loader2, Youtube, Key, FileVideo, Settings2, Sparkles, Type, Shuffle } from "lucide-react";
+import { Loader2, Youtube, Key, FileVideo, Settings2, Sparkles, Type, Shuffle, Calendar, Clock, Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface StreamFormProps {
@@ -63,6 +63,14 @@ function StreamFormInner({
   const [shuffle, setShuffle] = useState(editingStream?.shuffle ?? true);
   const [minHours, setMinHours] = useState(editingStream?.minHours ?? 2);
   const [maxHours, setMaxHours] = useState(editingStream?.maxHours ?? 4);
+  const [startAt, setStartAt] = useState<string>(
+    editingStream?.startAt
+      ? new Date(editingStream.startAt).toISOString().slice(0, 16)
+      : ""
+  );
+  const [autoCreateSchedule, setAutoCreateSchedule] = useState(
+    editingStream?.autoCreateSchedule ?? false
+  );
   const [encoder, setEncoder] = useState(editingStream?.encoder || "auto");
   const [copyMode, setCopyMode] = useState(editingStream?.copyMode || false);
   const [videoBitrate, setVideoBitrate] = useState(editingStream?.videoBitrate || "4500k");
@@ -95,6 +103,8 @@ function StreamFormInner({
       shuffle,
       minHours: Number(minHours),
       maxHours: Number(maxHours),
+      startAt: startAt ? new Date(startAt).toISOString() : null,
+      autoCreateSchedule,
       encoder,
       copyMode,
       videoBitrate,
@@ -279,6 +289,44 @@ function StreamFormInner({
                   <p className="text-[11px] text-slate-500">
                     Stream duration will be randomized between these values
                   </p>
+                </div>
+              </div>
+
+              {/* Schedule date & time picker */}
+              <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-cyan-300" />
+                  <Label className="text-cyan-300 font-semibold">Schedule (auto-start)</Label>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-slate-200 flex items-center gap-1.5">
+                    <Clock className="h-3 w-3" />
+                    Start Date &amp; Time
+                  </Label>
+                  <Input
+                    type="datetime-local"
+                    value={startAt}
+                    onChange={(e) => setStartAt(e.target.value)}
+                    className="bg-slate-900 border-slate-700 text-white"
+                  />
+                  <p className="text-[11px] text-slate-500">
+                    {startAt
+                      ? `Stream will auto-start at ${new Date(startAt).toLocaleString()}`
+                      : "Leave empty for manual start (click Start button anytime)"}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between rounded-md bg-slate-900/60 border border-slate-800 p-2.5">
+                  <div className="flex items-center gap-2">
+                    <Repeat className="h-4 w-4 text-emerald-300" />
+                    <div>
+                      <Label className="text-slate-200 cursor-pointer">Auto Create Next Schedule</Label>
+                      <p className="text-[11px] text-slate-500">
+                        Auto-create a new stream for tomorrow (startAt + 24h) with same stream key when this stream ends or errors
+                      </p>
+                    </div>
+                  </div>
+                  <Switch checked={autoCreateSchedule} onCheckedChange={setAutoCreateSchedule} />
                 </div>
               </div>
 

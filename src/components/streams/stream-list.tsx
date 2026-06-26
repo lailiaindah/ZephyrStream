@@ -26,6 +26,8 @@ import {
   ScrollText,
   Copy,
   Youtube,
+  Calendar,
+  Repeat,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -333,6 +335,18 @@ export function StreamList() {
                         {stream.channel?.name || "No channel"} •{" "}
                         {stream.minHours}-{stream.maxHours}h
                       </p>
+                      {stream.startAt && (
+                        <p className="text-[10px] text-cyan-400 mt-0.5 flex items-center gap-1">
+                          <Calendar className="h-2.5 w-2.5" />
+                          {new Date(stream.startAt).toLocaleString()}
+                        </p>
+                      )}
+                      {stream.autoCreateSchedule && (
+                        <p className="text-[10px] text-emerald-400 mt-0.5 flex items-center gap-1">
+                          <Repeat className="h-2.5 w-2.5" />
+                          Auto next-day schedule
+                        </p>
+                      )}
                     </div>
                   </div>
                   <StatusBadge status={stream.status} pulse={stream.status === "live"} />

@@ -8,11 +8,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { User, Shield, Server, Cpu, Save, Loader2, CheckCircle2 } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { User, Shield, Server, Cpu, Save, Loader2, CheckCircle2, Download, RefreshCw, GitBranch, AlertCircle } from "lucide-react";
 
 export function SettingsView({ user }: { user: any }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(user?.name || "");
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
 
   const { data: ffmpegInfo } = useQuery({
     queryKey: ["ffmpeg"],
@@ -29,6 +39,40 @@ export function SettingsView({ user }: { user: any }) {
       return res.json();
     },
     refetchInterval: 5000,
+  });
+
+  // Check for updates
+  const checkUpdateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/system/update?action=check", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data) => {
+      if (data.upToDate) {
+        toast.success("You are running the latest version");
+      } else {
+        toast.info(`${data.newCommits?.length || 0} new update(s) available`);
+        setUpdateDialogOpen(true);
+      }
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  // Pull updates
+  const pullUpdateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/system/update?action=pull", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success(data.message);
+      setUpdateDialogOpen(false);
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   return (
@@ -72,6 +116,68 @@ export function SettingsView({ user }: { user: any }) {
                 </Badge>
               </div>
             </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Update checker */}
+      <Card className="border-slate-800/60 bg-slate-900/40">
+        <div className="p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <GitBranch className="h-4 w-4 text-emerald-300" />
+            <h3 className="text-sm font-semibold text-white">App Updates</h3>
+          </div>
+          <div className="space-y-3">
+            <p className="text-xs text-slate-400">
+              Check for updates from the GitHub repository. If a new version is available,
+              you can pull it directly from here (works like <code className="text-cyan-300">git pull</code>).
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => checkUpdateMutation.mutate()}
+                disabled={checkUpdateMutation.isPending}
+                className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950"
+              >
+                {checkUpdateMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Cek Update
+              </Button>
+              <a
+                href="https://github.com/lailiaindah/ZephyrStream"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-slate-400 hover:text-cyan-300 underline"
+              >
+                github.com/lailiaindah/ZephyrStream
+              </a>
+            </div>
+            {checkUpdateMutation.data && !checkUpdateMutation.data.upToDate && (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertCircle className="h-4 w-4 text-amber-300" />
+                  <span className="text-sm font-medium text-amber-300">
+                    {checkUpdateMutation.data.message}
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => setUpdateDialogOpen(true)}
+                  className="bg-amber-500 hover:bg-amber-400 text-slate-950"
+                >
+                  <Download className="h-3.5 w-3.5 mr-1" />
+                  Lihat &amp; Install Update
+                </Button>
+              </div>
+            )}
+            {checkUpdateMutation.data?.upToDate && (
+              <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+                <span className="text-sm text-emerald-300">{checkUpdateMutation.data.message}</span>
+              </div>
+            )}
           </div>
         </div>
       </Card>
@@ -141,14 +247,65 @@ export function SettingsView({ user }: { user: any }) {
         <div className="p-5">
           <h3 className="text-sm font-semibold text-white mb-3">About ZephyrStream</h3>
           <p className="text-xs text-slate-400 leading-relaxed">
-            ZephyrStream is a self-hosted multi-channel YouTube live streaming platform. Each channel uses its own Google Cloud Console credentials (clientId + clientSecret) to create live broadcasts in YouTube Studio, while the actual video streaming uses the YouTube stream key via FFmpeg — saving valuable Google API quota.
+            ZephyrStream is a self-hosted multi-channel YouTube live streaming platform with automatic scheduling.
+            Each channel uses its own Google Cloud Console credentials (clientId + clientSecret) to create live broadcasts in YouTube Studio,
+            while the actual video streaming uses the YouTube stream key via FFmpeg — saving valuable Google API quota.
+            The scheduler auto-starts streams at their scheduled time and can auto-create next-day schedules.
           </p>
           <div className="mt-3 flex items-center gap-2 text-xs">
             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="text-slate-400">Version 1.0.0</span>
+            <span className="text-slate-400">Version 1.1.0 — with auto scheduler</span>
           </div>
         </div>
       </Card>
+
+      {/* Update dialog */}
+      <Dialog open={updateDialogOpen} onOpenChange={setUpdateDialogOpen}>
+        <DialogContent className="bg-slate-950 border-slate-800 text-white max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Download className="h-5 w-5 text-emerald-300" />
+              Update Available
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              {checkUpdateMutation.data?.newCommits?.length || 0} new commit(s) from GitHub
+            </DialogDescription>
+          </DialogHeader>
+
+          <ScrollArea className="h-48 rounded-lg border border-slate-800 bg-slate-900/50 p-3">
+            <div className="space-y-1 font-mono text-xs">
+              {checkUpdateMutation.data?.newCommits?.map((commit: string, idx: number) => (
+                <div key={idx} className="text-slate-300 py-0.5">{commit}</div>
+              ))}
+            </div>
+          </ScrollArea>
+
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-300">
+            <AlertCircle className="h-3.5 w-3.5 inline mr-1" />
+            After pulling, you may need to run <code className="text-amber-200">bun install</code> and{" "}
+            <code className="text-amber-200">bun run db:push</code> if dependencies or schema changed,
+            then restart the server.
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setUpdateDialogOpen(false)}>
+              Nanti
+            </Button>
+            <Button
+              onClick={() => pullUpdateMutation.mutate()}
+              disabled={pullUpdateMutation.isPending}
+              className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950"
+            >
+              {pullUpdateMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 mr-2" />
+              )}
+              Pull &amp; Install
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

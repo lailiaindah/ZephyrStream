@@ -149,10 +149,13 @@ model Stream {
   loopUntilDuration Boolean @default(true)
 
   // Schedule — duration is randomized between minHours and maxHours
+  // startAt is the scheduled start time. When autoCreateSchedule is on,
+  // the scheduler auto-starts the stream at startAt, and on end/error
+  // creates a new stream for startAt + 24h with the same stream key.
   startAt         DateTime?
   minHours        Float     @default(2.0)  // Minimum stream duration in hours
   maxHours        Float     @default(4.0)  // Maximum stream duration in hours
-  autoReschedule  Boolean   @default(false) // Auto-reschedule next day
+  autoCreateSchedule Boolean @default(false) // Auto-create next-day schedule on end/error
   autoDeleteAfterMinutes Int @default(30)
 
   // FFmpeg configuration

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { stopFFmpegStream } from "@/lib/ffmpeg";
 import { transitionBroadcast } from "@/lib/youtube";
+import { createNextDaySchedule } from "@/lib/scheduler";
 
 export async function POST(
   _req: NextRequest,
@@ -66,7 +67,34 @@ export async function POST(
       },
     });
 
-    return NextResponse.json({ success: true, stopped });
+    // If autoCreateSchedule is on, create the next-day schedule
+    // (startAt + 24h, NOT endedAt + 24h)
+    let nextSchedule = null;
+    if (stream.autoCreateSchedule) {
+      nextSchedule = await createNextDaySchedule(stream);
+      if (nextSchedule) {
+        await db.activityLog.create({
+          data: {
+            userId: user.id,
+            level: "success",
+            category: "stream",
+            message: `Auto-created next-day schedule: ${stream.name}`,
+            details: `Start at ${nextSchedule.startAt?.toISOString()}`,
+          },
+        });
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      stopped,
+      nextSchedule: nextSchedule
+        ? {
+            id: nextSchedule.id,
+            startAt: nextSchedule.startAt,
+          }
+        : null,
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

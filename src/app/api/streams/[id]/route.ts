@@ -55,7 +55,7 @@ export async function PATCH(
       "startAt", "encoder", "copyMode", "videoBitrate", "audioBitrate",
       "resolution", "fps", "preset", "privacyStatus", "categoryId", "tags",
       "playlistId", "alteredContent", "spinnerMode", "spinnerEmojis",
-      "autoReschedule", "status",
+      "autoCreateSchedule", "status",
     ];
 
     const updateData: any = {};

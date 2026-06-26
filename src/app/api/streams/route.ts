@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
       alteredContent,
       spinnerMode,
       spinnerEmojis,
-      autoReschedule,
+      autoCreateSchedule,
       // Allow copy/duplicate flow to pass a source stream id
       duplicateFrom,
     } = body;
@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
         alteredContent: alteredContent ?? source?.alteredContent ?? false,
         spinnerMode: spinnerMode || source?.spinnerMode || "off",
         spinnerEmojis: spinnerEmojis || source?.spinnerEmojis || null,
-        autoReschedule: autoReschedule ?? source?.autoReschedule ?? false,
+        autoCreateSchedule: autoCreateSchedule ?? source?.autoCreateSchedule ?? false,
         status: "scheduled",
       },
     });
