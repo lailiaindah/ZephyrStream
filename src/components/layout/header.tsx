@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import { Logo } from "@/components/common/logo";
+import { ServerClock } from "@/components/layout/server-clock";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -109,6 +110,9 @@ export function Header({ user, title, subtitle, actions, onNavigate, onLogout }:
 
       <div className="flex items-center gap-2 shrink-0">
         {actions}
+
+        {/* Server date & time clock */}
+        <ServerClock />
 
         {/* Search */}
         <Popover open={searchOpen} onOpenChange={setSearchOpen}>
