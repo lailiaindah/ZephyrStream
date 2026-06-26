@@ -396,6 +396,30 @@ export async function createNextDaySchedule(stream: any) {
   const baseStartAt = stream.startAt || stream.startedAt || new Date();
   const nextStartAt = new Date(baseStartAt.getTime() + 24 * 60 * 60 * 1000);
 
+  // === GUARD: prevent infinite schedule creation loop ===
+  // If nextStartAt is still in the past (e.g. original startAt was days ago),
+  // creating a next-day schedule would immediately trigger another auto-start
+  // which would error and create ANOTHER next-day schedule — infinite loop.
+  // Instead, skip creation and log a warning. The user should manually
+  // create a new schedule with a future startAt.
+  if (nextStartAt.getTime() <= Date.now()) {
+    console.warn(
+      `[Scheduler] Skipping next-day schedule for stream ${stream.id}: ` +
+      `nextStartAt (${nextStartAt.toISOString()}) is in the past. ` +
+      `Original startAt was too far in the past — manual reschedule required.`
+    );
+    await db.activityLog.create({
+      data: {
+        userId: stream.userId,
+        level: "warn",
+        category: "stream",
+        message: `Auto-schedule skipped for "${stream.name}": startAt was too far in the past`,
+        details: `Original startAt: ${baseStartAt.toISOString()}. Create a new schedule manually with a future date.`,
+      },
+    }).catch(() => {});
+    return null;
+  }
+
   try {
     const newStream = await db.stream.create({
       data: {
