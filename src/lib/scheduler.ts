@@ -20,11 +20,11 @@ async function schedulerTick() {
   isRunning = true;
 
   try {
-    await Promise.all([
-      autoStartScheduledStreams(),
-      autoStopExpiredStreams(),
-      cleanupGhostStreams(),
-    ]);
+    // Run sequentially to avoid race conditions between auto-stop and
+    // ghost-cleanup operating on the same stream in parallel.
+    await autoStartScheduledStreams();
+    await autoStopExpiredStreams();
+    await cleanupGhostStreams();
   } catch (err) {
     console.error("[Scheduler] Tick error:", err);
   } finally {
@@ -120,6 +120,15 @@ async function cleanupGhostStreams() {
 
 // Internal: start a stream (FFmpeg + optional YouTube broadcast)
 async function startStreamInternal(stream: any) {
+  // === GUARD: prevent double-start race condition ===
+  // Re-fetch the stream to check its current status. If another scheduler
+  // tick or a manual Start already moved it to "preparing"/"live", abort.
+  const fresh = await db.stream.findUnique({ where: { id: stream.id } });
+  if (!fresh || fresh.status === "live" || fresh.status === "preparing") {
+    console.log(`[Scheduler] Stream ${stream.id} already ${fresh?.status || "missing"}, skipping`);
+    return;
+  }
+
   // Resolve video files
   let videoFiles: string[] = [];
 
@@ -276,6 +285,15 @@ async function startStreamInternal(stream: any) {
 
 // Internal: stop a stream (FFmpeg + YouTube transition)
 async function stopStreamInternal(stream: any) {
+  // === GUARD: prevent double-stop race condition ===
+  // Re-fetch to check status. If already ended/error, skip (another tick
+  // may have already stopped it, or the ghost cleanup ran first).
+  const fresh = await db.stream.findUnique({ where: { id: stream.id } });
+  if (!fresh || fresh.status === "ended" || fresh.status === "error") {
+    console.log(`[Scheduler] Stream ${stream.id} already ${fresh?.status || "missing"}, skip stop`);
+    return;
+  }
+
   const { stopFFmpegStream } = await import("@/lib/ffmpeg");
   const { transitionBroadcast } = await import("@/lib/youtube");
 
