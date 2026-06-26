@@ -93,8 +93,23 @@ export async function probeVideo(filePath: string): Promise<{
   }
 }
 
+// Build a temporary concat list file for FFmpeg's concat demuxer.
+// This is the reliable way to concatenate multiple video files in both
+// copy and re-encode modes. Returns the path to the temp file, which
+// the caller (or FFmpeg exit handler) should clean up.
+async function buildConcatListFile(videoFiles: string[]): Promise<string> {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const listFile = path.join(STREAM_LOG_DIR, `concat_${timestamp}.txt`);
+  // FFmpeg concat demuxer format:
+  // file 'path/to/file1.mp4'
+  // file 'path/to/file2.mp4'
+  const lines = videoFiles.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n");
+  await fs.writeFile(listFile, lines, "utf-8");
+  return listFile;
+}
+
 // Build the FFmpeg command arguments for streaming
-function buildFFmpegArgs(opts: FFmpegOptions): string[] {
+function buildFFmpegArgs(opts: FFmpegOptions, concatListFile?: string): string[] {
   const { videoCodec } = resolveEncoder(opts.encoder);
   const rtmpEndpoint = opts.rtmpUrl.endsWith("/")
     ? `${opts.rtmpUrl}${opts.streamKey}`
@@ -102,25 +117,19 @@ function buildFFmpegArgs(opts: FFmpegOptions): string[] {
 
   const args: string[] = ["-hide_banner", "-loglevel", "info"];
 
-  // If we have multiple video files, use the concat demuxer to play them
-  // in sequence (then loop the whole concat indefinitely).
-  // For a single file, use the simple -i approach.
-  const useConcat = opts.videoFiles.length > 1;
-
-  if (useConcat) {
-    // Build a concat list string (FFmpeg concat demuxer format)
-    // We pass it via -i "concat:file1|file2|file3" for stream copy,
-    // OR via a temporary concat list file for re-encode mode.
-    // The pipe-separated form works for both modes and avoids temp files.
-    const concatInput = opts.videoFiles
-      .map((f) => f.replace(/'/g, "'\\''"))
-      .join("|");
+  // Single file: use -i directly. Multiple files: use concat demuxer
+  // with a temporary list file (reliable for both copy and re-encode modes).
+  if (concatListFile) {
+    // Multiple files — use concat demuxer via -f concat -i list.txt
     args.push(
       "-re",
-      "-stream_loop", "-1",
-      "-i", `concat:${concatInput}`,
+      "-stream_loop", "-1", // loop the concat list indefinitely
+      "-f", "concat",
+      "-safe", "0",
+      "-i", concatListFile,
     );
   } else {
+    // Single file
     args.push(
       "-re",
       "-stream_loop", "-1",
@@ -185,17 +194,35 @@ export async function startFFmpegStream(opts: FFmpegOptions): Promise<{
   const logFile = path.join(STREAM_LOG_DIR, `stream_${timestamp}.log`);
   const logHandle = await fs.open(logFile, "w");
 
-  const args = buildFFmpegArgs(opts);
+  // If multiple video files, build a concat list file (temp, auto-cleaned)
+  let concatListFile: string | undefined;
+  if (opts.videoFiles.length > 1) {
+    try {
+      concatListFile = await buildConcatListFile(opts.videoFiles);
+    } catch (err: any) {
+      await logHandle.close().catch(() => {});
+      throw new Error(`Failed to build concat list: ${err.message}`);
+    }
+  }
+
+  const args = buildFFmpegArgs(opts, concatListFile);
 
   const proc = spawn(FFMPEG_BINARY, args, {
     stdio: ["ignore", logHandle.fd, logHandle.fd],
     detached: false,
   });
 
+  // Cleanup helper: close log handle + delete concat list file
+  const cleanup = () => {
+    logHandle.close().catch(() => {});
+    if (concatListFile) {
+      fs.unlink(concatListFile).catch(() => {});
+    }
+  };
+
   proc.on("error", (err) => {
     fs.appendFile(logFile, `\n[ERROR] ${err.message}\n`).catch(() => {});
-    // Close the file handle on error to prevent descriptor leaks
-    logHandle.close().catch(() => {});
+    cleanup();
   });
 
   proc.on("exit", (code, signal) => {
@@ -203,13 +230,13 @@ export async function startFFmpegStream(opts: FFmpegOptions): Promise<{
       logFile,
       `\n[EXIT] code=${code} signal=${signal} at ${new Date().toISOString()}\n`
     ).catch(() => {});
-    logHandle.close().catch(() => {});
+    cleanup();
   });
 
   // If spawn failed synchronously (e.g., binary not found), proc.pid is undefined.
   // Close the log handle to prevent a file descriptor leak.
   if (!proc.pid) {
-    await logHandle.close().catch(() => {});
+    cleanup();
     throw new Error("Failed to spawn FFmpeg process — is FFmpeg installed and in PATH?");
   }
 
