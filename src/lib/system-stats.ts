@@ -55,13 +55,14 @@ let lastNetworkStats: { rx: number; tx: number; time: number } | null = null;
 
 // Get current system statistics
 export async function getSystemStats(): Promise<SystemStats> {
-  const [cpuLoad, cpuInfo, cpuTemp, mem, disk, netInterfaces, osInfo, time] = await Promise.all([
+  const [cpuLoad, cpuInfo, cpuTemp, mem, disk, netInterfaces, netStats, osInfo, time] = await Promise.all([
     si.currentLoad(),
     si.cpu(),
     si.cpuTemperature().catch(() => null),
     si.mem(),
     si.fsSize(),
     si.networkInterfaces(),
+    si.networkStats().catch(() => [] as any[]),
     si.osInfo(),
     si.time(),
   ]);
@@ -70,22 +71,37 @@ export async function getSystemStats(): Promise<SystemStats> {
   const defaultInterface =
     netInterfaces.find((n) => n.default) || netInterfaces[0] || null;
 
-  // Network speed: compute delta from last call
+  // Network speed: compute delta from last call.
+  // si.networkInterfaces() doesn't include rx/tx stats — we must use
+  // si.networkStats() which returns real-time throughput per interface.
   let downloadSpeed = 0;
   let uploadSpeed = 0;
+  let totalRx = 0;
+  let totalTx = 0;
+  let netIfaceName = "unknown";
+
   if (defaultInterface) {
-    const currentRx = defaultInterface.stats?.rx || 0;
-    const currentTx = defaultInterface.stats?.tx || 0;
-    const now = Date.now();
-    if (lastNetworkStats && lastNetworkStats.time < now) {
-      const timeDeltaSec = (now - lastNetworkStats.time) / 1000;
-      const rxDeltaBytes = currentRx - lastNetworkStats.rx;
-      const txDeltaBytes = currentTx - lastNetworkStats.tx;
-      // Convert bytes/sec to Mbps
-      downloadSpeed = Math.max(0, (rxDeltaBytes * 8) / (timeDeltaSec * 1_000_000));
-      uploadSpeed = Math.max(0, (txDeltaBytes * 8) / (timeDeltaSec * 1_000_000));
+    netIfaceName = defaultInterface.iface || "unknown";
+    // Find the matching stats entry for the default interface
+    const ifaceStats = (netStats as any[]).find(
+      (s) => s.iface === defaultInterface.iface
+    ) || (netStats as any[])[0];
+
+    if (ifaceStats) {
+      // systeminformation v5 uses rx_bytes / tx_bytes (not rx / tx)
+      totalRx = ifaceStats.rx_bytes || 0;
+      totalTx = ifaceStats.tx_bytes || 0;
+      const now = Date.now();
+      if (lastNetworkStats && lastNetworkStats.time < now) {
+        const timeDeltaSec = (now - lastNetworkStats.time) / 1000;
+        const rxDeltaBytes = totalRx - lastNetworkStats.rx;
+        const txDeltaBytes = totalTx - lastNetworkStats.tx;
+        // Convert bytes/sec to Mbps
+        downloadSpeed = Math.max(0, (rxDeltaBytes * 8) / (timeDeltaSec * 1_000_000));
+        uploadSpeed = Math.max(0, (txDeltaBytes * 8) / (timeDeltaSec * 1_000_000));
+      }
+      lastNetworkStats = { rx: totalRx, tx: totalTx, time: now };
     }
-    lastNetworkStats = { rx: currentRx, tx: currentTx, time: now };
   }
 
   const totalMemGB = mem.total / 1_073_741_824;
@@ -124,9 +140,9 @@ export async function getSystemStats(): Promise<SystemStats> {
     network: {
       downloadSpeed,
       uploadSpeed,
-      interface: defaultInterface?.iface || "unknown",
-      totalRx: (defaultInterface?.stats?.rx || 0) / 1_073_741_824,
-      totalTx: (defaultInterface?.stats?.tx || 0) / 1_073_741_824,
+      interface: netIfaceName,
+      totalRx: totalRx / 1_073_741_824,
+      totalTx: totalTx / 1_073_741_824,
     },
     uptime: osInfo.uptime || 0,
     os: {
