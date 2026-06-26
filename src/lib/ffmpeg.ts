@@ -171,6 +171,8 @@ export async function startFFmpegStream(opts: FFmpegOptions): Promise<{
 
   proc.on("error", (err) => {
     fs.appendFile(logFile, `\n[ERROR] ${err.message}\n`).catch(() => {});
+    // Close the file handle on error to prevent descriptor leaks
+    logHandle.close().catch(() => {});
   });
 
   proc.on("exit", (code, signal) => {
@@ -181,8 +183,11 @@ export async function startFFmpegStream(opts: FFmpegOptions): Promise<{
     logHandle.close().catch(() => {});
   });
 
+  // If spawn failed synchronously (e.g., binary not found), proc.pid is undefined.
+  // Close the log handle to prevent a file descriptor leak.
   if (!proc.pid) {
-    throw new Error("Failed to spawn FFmpeg process");
+    await logHandle.close().catch(() => {});
+    throw new Error("Failed to spawn FFmpeg process — is FFmpeg installed and in PATH?");
   }
 
   return { pid: proc.pid, logFile, process: proc };

@@ -22,7 +22,6 @@ import { Radio, RefreshCw, Plus, Server } from "lucide-react";
 export default function Home() {
   const queryClient = useQueryClient();
   const [view, setView] = useState<ViewKey>("dashboard");
-  const [forceAuthed, setForceAuthed] = useState(false);
 
   // Check current user on mount
   const { data: authData, isLoading: authLoading } = useQuery({
@@ -33,8 +32,8 @@ export default function Home() {
     },
   });
 
-  // Derive state from query result — no setState in effects
-  const user = forceAuthed ? (authData?.user || null) : (authData?.user ?? null);
+  // Derive user directly from query data
+  const user = authData?.user ?? null;
   const authChecked = !authLoading && authData !== undefined;
 
   // Dashboard data
@@ -62,7 +61,8 @@ export default function Home() {
   const handleLogout = async () => {
     try {
       await fetch("/api/auth/signout", { method: "POST" });
-      setForceAuthed(false);
+      // Immediately update the cache so the auth form shows without waiting for refetch
+      queryClient.setQueryData(["auth-me"], { user: null });
       queryClient.clear();
       queryClient.invalidateQueries({ queryKey: ["auth-me"] });
       toast.success("Signed out");
@@ -85,9 +85,9 @@ export default function Home() {
 
   // Not authenticated — show auth form
   if (!user) {
-    return <AuthForm onAuthSuccess={() => {
-      setForceAuthed(true);
-      queryClient.invalidateQueries({ queryKey: ["auth-me"] });
+    return <AuthForm onAuthSuccess={(userData) => {
+      // Immediately update the cache so the dashboard shows without a refetch flash
+      queryClient.setQueryData(["auth-me"], { user: userData });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     }} />;
   }
