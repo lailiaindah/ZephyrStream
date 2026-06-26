@@ -45,12 +45,30 @@ export async function POST(req: NextRequest) {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const formData = await req.formData();
+    // Parse form data — may throw if content-type is not multipart/form-data
+    let formData: FormData;
+    try {
+      formData = await req.formData();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid form data. Expected multipart/form-data with files." },
+        { status: 400 }
+      );
+    }
+
     const channelId = formData.get("channelId") as string;
     const files = formData.getAll("files");
 
     if (!channelId) {
       return NextResponse.json({ error: "channelId is required" }, { status: 400 });
+    }
+
+    // Early check: if no files provided, return 400 immediately
+    if (!files || files.length === 0) {
+      return NextResponse.json(
+        { error: "No files provided. Use the 'files' field in multipart form data." },
+        { status: 400 }
+      );
     }
 
     // Verify channel ownership
