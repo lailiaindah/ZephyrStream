@@ -505,3 +505,55 @@ export async function resetThumbnailRotator(channelId: string): Promise<void> {
     data: { thumbnailRotatorIndex: 0 },
   });
 }
+
+// ============================================================
+// PICK TITLE & THUMBNAIL AT SCHEDULE CREATION TIME
+// ============================================================
+// This is called when a stream schedule is CREATED (not when it starts).
+// It advances the rotator indexes so the next schedule gets the next
+// title/thumbnail in the rotation.
+
+export interface PickedTitleThumbnail {
+  resolvedTitle: string | null;
+  resolvedThumbnailPath: string | null;
+  resolvedThumbnailMime: string | null;
+  resolvedThumbnailId: string | null;
+}
+
+// Pick the next title and thumbnail for a channel.
+// Advances the rotator indexes. Returns null values if the channel
+// has no titles/thumbnails configured (caller should fall back to stream.name).
+export async function pickTitleAndThumbnail(
+  channelId: string,
+  spinnerMode: string,
+  spinnerEmojis: string[]
+): Promise<PickedTitleThumbnail> {
+  const result: PickedTitleThumbnail = {
+    resolvedTitle: null,
+    resolvedThumbnailPath: null,
+    resolvedThumbnailMime: null,
+    resolvedThumbnailId: null,
+  };
+
+  // Pick title (advances titleRotatorIndex)
+  try {
+    const title = await getNextTitle(channelId, spinnerMode, spinnerEmojis);
+    result.resolvedTitle = title;
+  } catch (err: any) {
+    console.warn("[Rotator] pickTitleAndThumbnail: title pick failed:", err.message);
+  }
+
+  // Pick thumbnail (advances thumbnailRotatorIndex)
+  try {
+    const thumb = await getNextThumbnail(channelId);
+    if (thumb) {
+      result.resolvedThumbnailPath = thumb.storagePath;
+      result.resolvedThumbnailMime = thumb.mimeType;
+      result.resolvedThumbnailId = thumb.id;
+    }
+  } catch (err: any) {
+    console.warn("[Rotator] pickTitleAndThumbnail: thumbnail pick failed:", err.message);
+  }
+
+  return result;
+}

@@ -145,6 +145,14 @@ model Stream {
   thumbnailUrl    String?
   alteredContent  Boolean   @default(false) // YouTube "altered/synthetic content" flag
 
+  // === Resolved title & thumbnail — picked at SCHEDULE CREATION time ===
+  // (NOT at stream start). This way each scheduled stream has its own
+  // pre-assigned title/thumbnail from the rotator, and the rotator
+  // index advances when the schedule is created, not when it starts.
+  resolvedTitle          String?  // Final title (with spinner emoji applied)
+  resolvedThumbnailPath  String?  // Local path to the thumbnail file
+  resolvedThumbnailMime  String?  // MIME type for the thumbnail file
+
   // Video source
   sourceType      String    @default("local") // local | gdrive
   sourcePath      String?   // Local folder path or Google Drive folder id

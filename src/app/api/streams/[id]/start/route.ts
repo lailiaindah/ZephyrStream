@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { startFFmpegStream, isProcessRunning } from "@/lib/ffmpeg";
-import { createBroadcast, getNextTitle, getNextThumbnail, uploadThumbnail } from "@/lib/youtube";
+import { createBroadcast, uploadThumbnail } from "@/lib/youtube";
 
 export async function POST(
   _req: NextRequest,
@@ -107,40 +107,20 @@ export async function POST(
           replayPrivacy = Math.random() < 0.5 ? "unlisted" : "public";
         }
 
-        // === TITLE ROTATOR ===
-        // Try to get the next title from the channel's title list.
-        // Applies spinner emoji (front/back/both) if enabled.
-        // Falls back to stream.name if no titles configured.
-        let broadcastTitle = stream.name;
-        try {
-          const spinnerEmojis = stream.spinnerEmojis
-            ? JSON.parse(stream.spinnerEmojis)
-            : [];
-          const rotatedTitle = await getNextTitle(
-            stream.channelId,
-            stream.spinnerMode || "off",
-            spinnerEmojis
-          );
-          if (rotatedTitle) {
-            broadcastTitle = rotatedTitle;
-            console.log(`[Start] Using rotated title: "${broadcastTitle}"`);
-          }
-        } catch (err: any) {
-          console.warn("[Start] Title rotator failed, using stream.name:", err.message);
-        }
-
-        // === THUMBNAIL ROTATOR ===
-        let nextThumb: { id: string; storagePath: string; mimeType: string } | null = null;
-        try {
-          nextThumb = await getNextThumbnail(stream.channelId);
-        } catch (err: any) {
-          console.warn("[Start] Thumbnail rotator failed:", err.message);
+        // === USE PRE-PICKED TITLE (resolved at schedule creation time) ===
+        // The title was picked when the stream was created/rescheduled.
+        // Fall back to stream.name only if no title was picked.
+        const broadcastTitle = stream.resolvedTitle || stream.name;
+        if (stream.resolvedTitle) {
+          console.log(`[Start] Using pre-picked title: "${broadcastTitle}"`);
+        } else {
+          console.log(`[Start] No pre-picked title, using stream.name: "${broadcastTitle}"`);
         }
 
         const { broadcastId, streamId: ytStreamId } = await createBroadcast(
           stream.channelId,
           {
-            title: broadcastTitle, // ← rotated title (not stream.name)
+            title: broadcastTitle,
             description: stream.description || "",
             startAt,
             endAt,
@@ -151,14 +131,14 @@ export async function POST(
           }
         );
 
-        // === UPLOAD THUMBNAIL ===
-        if (nextThumb) {
+        // === UPLOAD PRE-PICKED THUMBNAIL (resolved at schedule creation time) ===
+        if (stream.resolvedThumbnailPath) {
           try {
             const thumbUrl = await uploadThumbnail(
               stream.channelId,
               broadcastId,
-              nextThumb.storagePath,
-              nextThumb.mimeType
+              stream.resolvedThumbnailPath,
+              stream.resolvedThumbnailMime || "image/jpeg"
             );
             if (thumbUrl) {
               console.log(`[Start] Thumbnail uploaded: ${thumbUrl}`);

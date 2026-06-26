@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { YOUTUBE_RTMP_BASE } from "@/lib/constants";
+import { pickTitleAndThumbnail } from "@/lib/youtube";
 
 export async function GET(req: NextRequest) {
   try {
@@ -117,7 +118,9 @@ export async function POST(req: NextRequest) {
         rtmpUrl: rtmpUrl || source?.rtmpUrl || YOUTUBE_RTMP_BASE,
         sourceType: sourceType || source?.sourceType || "local",
         sourcePath: sourcePath || source?.sourcePath || null,
-        sourceFileIds: sourceFileIds || source?.sourceFileIds || null,
+        sourceFileIds: sourceFileIds
+          ? (typeof sourceFileIds === "string" ? sourceFileIds : JSON.stringify(sourceFileIds))
+          : (source?.sourceFileIds || null),
         shuffle: shuffle ?? source?.shuffle ?? true,
         minHours: minHours ?? source?.minHours ?? 2.0,
         maxHours: maxHours ?? source?.maxHours ?? 4.0,
@@ -135,11 +138,49 @@ export async function POST(req: NextRequest) {
         playlistId: playlistId || source?.playlistId || null,
         alteredContent: alteredContent ?? source?.alteredContent ?? false,
         spinnerMode: spinnerMode || source?.spinnerMode || "off",
-        spinnerEmojis: spinnerEmojis || source?.spinnerEmojis || null,
+        spinnerEmojis: spinnerEmojis
+          ? (typeof spinnerEmojis === "string" ? spinnerEmojis : JSON.stringify(spinnerEmojis))
+          : (source?.spinnerEmojis || null),
         autoCreateSchedule: autoCreateSchedule ?? source?.autoCreateSchedule ?? false,
         status: "scheduled",
       },
     });
+
+    // === PICK TITLE & THUMBNAIL AT SCHEDULE CREATION TIME ===
+    // (NOT at stream start). This advances the channel's rotator indexes
+    // so the next schedule gets the next title/thumbnail in the rotation.
+    // The picked values are stored on the stream and used when the stream
+    // actually starts (auto or manual).
+    const effectiveChannelId = stream.channelId;
+    if (effectiveChannelId) {
+      try {
+        const effectiveSpinnerMode = stream.spinnerMode || "off";
+        const effectiveSpinnerEmojis = stream.spinnerEmojis
+          ? JSON.parse(stream.spinnerEmojis)
+          : [];
+        const picked = await pickTitleAndThumbnail(
+          effectiveChannelId,
+          effectiveSpinnerMode,
+          effectiveSpinnerEmojis
+        );
+        await db.stream.update({
+          where: { id: stream.id },
+          data: {
+            resolvedTitle: picked.resolvedTitle,
+            resolvedThumbnailPath: picked.resolvedThumbnailPath,
+            resolvedThumbnailMime: picked.resolvedThumbnailMime,
+          },
+        });
+        if (picked.resolvedTitle) {
+          console.log(`[Create] Picked title for stream ${stream.id}: "${picked.resolvedTitle}"`);
+        }
+      } catch (err: any) {
+        console.warn("[Create] Failed to pick title/thumbnail:", err.message);
+      }
+    }
+
+    // Re-fetch the stream with resolved fields
+    const updatedStream = await db.stream.findUnique({ where: { id: stream.id } });
 
     await db.activityLog.create({
       data: {
@@ -153,7 +194,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ stream });
+    return NextResponse.json({ stream: updatedStream });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

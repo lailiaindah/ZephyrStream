@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { pickTitleAndThumbnail } from "@/lib/youtube";
 
 export async function GET(
   _req: NextRequest,
@@ -76,7 +77,41 @@ export async function PATCH(
       data: updateData,
     });
 
-    return NextResponse.json({ stream: updated });
+    // === RE-PICK TITLE & THUMBNAIL IF CHANNEL OR SPINNER CHANGED ===
+    // If the user changed the channelId, spinnerMode, or spinnerEmojis,
+    // the previously-picked title/thumbnail are stale — pick fresh ones.
+    const channelChanged = body.channelId !== undefined;
+    const spinnerChanged =
+      body.spinnerMode !== undefined || body.spinnerEmojis !== undefined;
+    if ((channelChanged || spinnerChanged) && updated.channelId && updated.status === "scheduled") {
+      try {
+        const effectiveSpinnerMode = updated.spinnerMode || "off";
+        const effectiveSpinnerEmojis = updated.spinnerEmojis
+          ? JSON.parse(updated.spinnerEmojis)
+          : [];
+        const picked = await pickTitleAndThumbnail(
+          updated.channelId,
+          effectiveSpinnerMode,
+          effectiveSpinnerEmojis
+        );
+        await db.stream.update({
+          where: { id: updated.id },
+          data: {
+            resolvedTitle: picked.resolvedTitle,
+            resolvedThumbnailPath: picked.resolvedThumbnailPath,
+            resolvedThumbnailMime: picked.resolvedThumbnailMime,
+          },
+        });
+        console.log(`[PATCH] Re-picked title for stream ${updated.id}: "${picked.resolvedTitle}"`);
+      } catch (err: any) {
+        console.warn("[PATCH] Failed to re-pick title/thumbnail:", err.message);
+      }
+    }
+
+    // Re-fetch with resolved fields
+    const finalStream = await db.stream.findUnique({ where: { id: updated.id } });
+
+    return NextResponse.json({ stream: finalStream });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

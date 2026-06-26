@@ -8,7 +8,7 @@
 
 import { db } from "@/lib/db";
 import { startFFmpegStream, isProcessRunning } from "@/lib/ffmpeg";
-import { createBroadcast, getNextTitle, getNextThumbnail, uploadThumbnail } from "@/lib/youtube";
+import { createBroadcast, uploadThumbnail, pickTitleAndThumbnail } from "@/lib/youtube";
 
 const CHECK_INTERVAL_MS = 30 * 1000; // 30 seconds
 let schedulerInterval: NodeJS.Timeout | null = null;
@@ -172,41 +172,21 @@ async function startStreamInternal(stream: any) {
         replayPrivacy = Math.random() < 0.5 ? "unlisted" : "public";
       }
 
-      // === TITLE ROTATOR ===
-      // Try to get the next title from the channel's title list.
-      // Applies spinner emoji (front/back/both) if enabled.
-      // Falls back to stream.name if no titles configured.
-      let broadcastTitle = stream.name;
-      try {
-        const spinnerEmojis = stream.spinnerEmojis
-          ? JSON.parse(stream.spinnerEmojis)
-          : [];
-        const rotatedTitle = await getNextTitle(
-          stream.channelId,
-          stream.spinnerMode || "off",
-          spinnerEmojis
-        );
-        if (rotatedTitle) {
-          broadcastTitle = rotatedTitle;
-          console.log(`[Scheduler] Using rotated title: "${broadcastTitle}"`);
-        }
-      } catch (err: any) {
-        console.warn("[Scheduler] Title rotator failed, using stream.name:", err.message);
-      }
-
-      // === THUMBNAIL ROTATOR ===
-      // Get the next thumbnail (rotator index). Upload happens after broadcast create.
-      let nextThumb: { id: string; storagePath: string; mimeType: string } | null = null;
-      try {
-        nextThumb = await getNextThumbnail(stream.channelId);
-      } catch (err: any) {
-        console.warn("[Scheduler] Thumbnail rotator failed:", err.message);
+      // === USE PRE-PICKED TITLE (resolved at schedule creation time) ===
+      // The title was picked when the stream was created/rescheduled.
+      // Fall back to stream.name only if no title was picked (e.g. channel
+      // had no titles at creation time).
+      const broadcastTitle = stream.resolvedTitle || stream.name;
+      if (stream.resolvedTitle) {
+        console.log(`[Scheduler] Using pre-picked title: "${broadcastTitle}"`);
+      } else {
+        console.log(`[Scheduler] No pre-picked title, using stream.name: "${broadcastTitle}"`);
       }
 
       const { broadcastId, streamId: ytStreamId } = await createBroadcast(
         stream.channelId,
         {
-          title: broadcastTitle, // ← rotated title (not stream.name)
+          title: broadcastTitle,
           description: stream.description || "",
           startAt,
           endAt,
@@ -216,15 +196,14 @@ async function startStreamInternal(stream: any) {
         }
       );
 
-      // === UPLOAD THUMBNAIL ===
-      // If we got a thumbnail from the rotator, upload it to the broadcast.
-      if (nextThumb) {
+      // === UPLOAD PRE-PICKED THUMBNAIL (resolved at schedule creation time) ===
+      if (stream.resolvedThumbnailPath) {
         try {
           const thumbUrl = await uploadThumbnail(
             stream.channelId,
             broadcastId,
-            nextThumb.storagePath,
-            nextThumb.mimeType
+            stream.resolvedThumbnailPath,
+            stream.resolvedThumbnailMime || "image/jpeg"
           );
           if (thumbUrl) {
             console.log(`[Scheduler] Thumbnail uploaded: ${thumbUrl}`);
@@ -375,8 +354,39 @@ export async function createNextDaySchedule(stream: any) {
         spinnerMode: stream.spinnerMode,
         spinnerEmojis: stream.spinnerEmojis,
         status: "scheduled",
+        // NOTE: resolvedTitle/resolvedThumbnailPath are NOT copied — the new
+        // schedule picks its OWN fresh title/thumbnail below.
       },
     });
+
+    // === PICK FRESH TITLE & THUMBNAIL FOR THE NEW SCHEDULE ===
+    // (at schedule creation time, NOT at stream start)
+    if (newStream.channelId) {
+      try {
+        const effectiveSpinnerMode = newStream.spinnerMode || "off";
+        const effectiveSpinnerEmojis = newStream.spinnerEmojis
+          ? JSON.parse(newStream.spinnerEmojis)
+          : [];
+        const picked = await pickTitleAndThumbnail(
+          newStream.channelId,
+          effectiveSpinnerMode,
+          effectiveSpinnerEmojis
+        );
+        await db.stream.update({
+          where: { id: newStream.id },
+          data: {
+            resolvedTitle: picked.resolvedTitle,
+            resolvedThumbnailPath: picked.resolvedThumbnailPath,
+            resolvedThumbnailMime: picked.resolvedThumbnailMime,
+          },
+        });
+        if (picked.resolvedTitle) {
+          console.log(`[Scheduler] Picked title for next-day stream ${newStream.id}: "${picked.resolvedTitle}"`);
+        }
+      } catch (err: any) {
+        console.warn("[Scheduler] Failed to pick title/thumbnail for next-day:", err.message);
+      }
+    }
 
     await db.activityLog.create({
       data: {
