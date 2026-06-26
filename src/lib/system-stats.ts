@@ -1,6 +1,7 @@
 // VPS system monitoring library — uses systeminformation to gather metrics
 
 import si from "systeminformation";
+import os from "os";
 import { db } from "@/lib/db";
 
 export interface SystemStats {
@@ -67,6 +68,10 @@ export async function getSystemStats(): Promise<SystemStats> {
     si.time(),
   ]);
 
+  // Get load average from Node's os module (not available via systeminformation)
+  // Returns [1min, 5min, 15min] averages
+  const loadAvg = os.loadavg();
+
   // Pick the default network interface
   const defaultInterface =
     netInterfaces.find((n) => n.default) || netInterfaces[0] || null;
@@ -124,11 +129,8 @@ export async function getSystemStats(): Promise<SystemStats> {
       manufacturer: cpuInfo.manufacturer,
       brand: cpuInfo.brand,
       temperature: cpuTemp?.main ?? null,
-      loadAvg: [
-        osInfo.platform === "linux" ? (cpuLoad.avgLoad || 0) : 0,
-        0,
-        0,
-      ],
+      // Load average from os.loadavg() — [1min, 5min, 15min]
+      loadAvg: loadAvg as [number, number, number],
     },
     memory: {
       total: totalMemGB,
@@ -144,7 +146,7 @@ export async function getSystemStats(): Promise<SystemStats> {
       totalRx: totalRx / 1_073_741_824,
       totalTx: totalTx / 1_073_741_824,
     },
-    uptime: osInfo.uptime || 0,
+    uptime: time.uptime || 0,
     os: {
       platform: osInfo.platform,
       distro: osInfo.distro,
@@ -154,9 +156,9 @@ export async function getSystemStats(): Promise<SystemStats> {
     },
     load: {
       current: cpuLoad.currentLoad || 0,
-      average1: cpuLoad.avgLoad || 0,
-      average5: 0,
-      average15: 0,
+      average1: loadAvg[0] || 0,
+      average5: loadAvg[1] || 0,
+      average15: loadAvg[2] || 0,
     },
     timestamp: new Date().toISOString(),
   };
