@@ -1,7 +1,9 @@
 // POST /api/thumbnails/shuffle — Randomize the sort order of all thumbnails for a channel
+// Also resets the thumbnail rotator index to 0 so the new order starts fresh.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { resetThumbnailRotator } from "@/lib/youtube";
 
 export async function POST(req: NextRequest) {
   try {
@@ -40,12 +42,15 @@ export async function POST(req: NextRequest) {
       )
     );
 
+    // Reset the rotator index so the next stream starts from the new first thumbnail
+    await resetThumbnailRotator(channelId);
+
     await db.activityLog.create({
       data: {
         userId: user.id,
         level: "info",
         category: "channel",
-        message: `Shuffled ${shuffled.length} thumbnails in ${channel.name}`,
+        message: `Shuffled ${shuffled.length} thumbnails in ${channel.name} (rotator reset)`,
       },
     });
 

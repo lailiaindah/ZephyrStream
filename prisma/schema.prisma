@@ -57,6 +57,10 @@ model Channel {
   tokenExpiresAt  DateTime?
   status          String    @default("inactive") // active | inactive | error
   lastSyncAt      DateTime?
+  // Rotator indexes — persisted across streams so each stream uses the next
+  // title/thumbnail in the list. Reset to 0 when shuffle is clicked.
+  titleRotatorIndex     Int @default(0)
+  thumbnailRotatorIndex Int @default(0)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

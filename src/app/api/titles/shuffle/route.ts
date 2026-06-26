@@ -1,7 +1,9 @@
 // POST /api/titles/shuffle — Randomize the sort order of all titles for a channel
+// Also resets the title rotator index to 0 so the new order starts fresh.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { resetTitleRotator } from "@/lib/youtube";
 
 export async function POST(req: NextRequest) {
   try {
@@ -44,12 +46,15 @@ export async function POST(req: NextRequest) {
       )
     );
 
+    // Reset the rotator index so the next stream starts from the new first title
+    await resetTitleRotator(channelId);
+
     await db.activityLog.create({
       data: {
         userId: user.id,
         level: "info",
         category: "channel",
-        message: `Shuffled ${shuffled.length} titles in ${channel.name}`,
+        message: `Shuffled ${shuffled.length} titles in ${channel.name} (rotator reset)`,
       },
     });
 

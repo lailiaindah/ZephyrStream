@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { startFFmpegStream, isProcessRunning } from "@/lib/ffmpeg";
-import { createBroadcast } from "@/lib/youtube";
+import { createBroadcast, getNextTitle, getNextThumbnail, uploadThumbnail } from "@/lib/youtube";
 
 export async function POST(
   _req: NextRequest,
@@ -73,6 +73,16 @@ export async function POST(
       );
     }
 
+    // === VIDEO SHUFFLE ===
+    // If the stream has shuffle enabled, randomize the playback order.
+    if (stream.shuffle && videoFiles.length > 1) {
+      for (let i = videoFiles.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [videoFiles[i], videoFiles[j]] = [videoFiles[j], videoFiles[i]];
+      }
+      console.log(`[Start] Shuffled ${videoFiles.length} video files`);
+    }
+
     // Update status to preparing
     await db.stream.update({
       where: { id: stream.id },
@@ -97,10 +107,40 @@ export async function POST(
           replayPrivacy = Math.random() < 0.5 ? "unlisted" : "public";
         }
 
+        // === TITLE ROTATOR ===
+        // Try to get the next title from the channel's title list.
+        // Applies spinner emoji (front/back/both) if enabled.
+        // Falls back to stream.name if no titles configured.
+        let broadcastTitle = stream.name;
+        try {
+          const spinnerEmojis = stream.spinnerEmojis
+            ? JSON.parse(stream.spinnerEmojis)
+            : [];
+          const rotatedTitle = await getNextTitle(
+            stream.channelId,
+            stream.spinnerMode || "off",
+            spinnerEmojis
+          );
+          if (rotatedTitle) {
+            broadcastTitle = rotatedTitle;
+            console.log(`[Start] Using rotated title: "${broadcastTitle}"`);
+          }
+        } catch (err: any) {
+          console.warn("[Start] Title rotator failed, using stream.name:", err.message);
+        }
+
+        // === THUMBNAIL ROTATOR ===
+        let nextThumb: { id: string; storagePath: string; mimeType: string } | null = null;
+        try {
+          nextThumb = await getNextThumbnail(stream.channelId);
+        } catch (err: any) {
+          console.warn("[Start] Thumbnail rotator failed:", err.message);
+        }
+
         const { broadcastId, streamId: ytStreamId } = await createBroadcast(
           stream.channelId,
           {
-            title: stream.name,
+            title: broadcastTitle, // ← rotated title (not stream.name)
             description: stream.description || "",
             startAt,
             endAt,
@@ -110,6 +150,27 @@ export async function POST(
             tags: stream.tags ? stream.tags.split(",").map((t) => t.trim()) : undefined,
           }
         );
+
+        // === UPLOAD THUMBNAIL ===
+        if (nextThumb) {
+          try {
+            const thumbUrl = await uploadThumbnail(
+              stream.channelId,
+              broadcastId,
+              nextThumb.storagePath,
+              nextThumb.mimeType
+            );
+            if (thumbUrl) {
+              console.log(`[Start] Thumbnail uploaded: ${thumbUrl}`);
+              await db.stream.update({
+                where: { id: stream.id },
+                data: { thumbnailUrl: thumbUrl },
+              });
+            }
+          } catch (err: any) {
+            console.warn("[Start] Thumbnail upload failed:", err.message);
+          }
+        }
 
         await db.stream.update({
           where: { id: stream.id },

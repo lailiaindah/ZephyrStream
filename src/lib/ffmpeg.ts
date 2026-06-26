@@ -102,12 +102,35 @@ function buildFFmpegArgs(opts: FFmpegOptions): string[] {
 
   const args: string[] = ["-hide_banner", "-loglevel", "info"];
 
+  // If we have multiple video files, use the concat demuxer to play them
+  // in sequence (then loop the whole concat indefinitely).
+  // For a single file, use the simple -i approach.
+  const useConcat = opts.videoFiles.length > 1;
+
+  if (useConcat) {
+    // Build a concat list string (FFmpeg concat demuxer format)
+    // We pass it via -i "concat:file1|file2|file3" for stream copy,
+    // OR via a temporary concat list file for re-encode mode.
+    // The pipe-separated form works for both modes and avoids temp files.
+    const concatInput = opts.videoFiles
+      .map((f) => f.replace(/'/g, "'\\''"))
+      .join("|");
+    args.push(
+      "-re",
+      "-stream_loop", "-1",
+      "-i", `concat:${concatInput}`,
+    );
+  } else {
+    args.push(
+      "-re",
+      "-stream_loop", "-1",
+      "-i", opts.videoFiles[0],
+    );
+  }
+
   // Re-encode mode: normalize everything for stable playback
   if (!opts.copyMode) {
     args.push(
-      "-re", // Read input at native frame rate
-      "-stream_loop", "-1", // Loop the input indefinitely
-      "-i", opts.videoFiles[0],
       "-c:v", videoCodec,
       "-preset", opts.preset,
       "-b:v", opts.videoBitrate,
@@ -126,21 +149,21 @@ function buildFFmpegArgs(opts: FFmpegOptions): string[] {
   } else {
     // Copy mode: stream copy without re-encoding (works only when all videos share specs)
     args.push(
-      "-re",
-      "-stream_loop", "-1",
-      "-i", opts.videoFiles[0],
       "-c", "copy",
       "-f", "flv",
       rtmpEndpoint
     );
   }
 
-  // Duration limit: place -t AFTER the input file so it acts as an
-  // output option (caps the total stream duration). Placing it before
-  // -i as an input option can interact poorly with -stream_loop -1.
+  // Duration limit: place -t AFTER the input spec so it acts as an
+  // output option (caps the total stream duration).
   if (opts.durationSeconds) {
-    const inputFileIndex = args.indexOf("-i") + 2; // skip "-i" and the filename
-    args.splice(inputFileIndex, 0, "-t", opts.durationSeconds.toString());
+    // Find the position right after the -i and its argument
+    const iIndex = args.indexOf("-i");
+    if (iIndex !== -1) {
+      const afterInput = iIndex + 2; // skip "-i" and the filename/concat
+      args.splice(afterInput, 0, "-t", opts.durationSeconds.toString());
+    }
   }
 
   return args;

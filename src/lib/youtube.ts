@@ -360,3 +360,148 @@ export async function listBroadcasts(channelId: string) {
 
   return response.data.items || [];
 }
+
+// ============================================================
+// TITLE & THUMBNAIL ROTATOR
+// ============================================================
+
+// Get the next title for a channel using the rotator index.
+// Returns the title string (with spinner emoji applied if enabled),
+// or null if the channel has no titles.
+export async function getNextTitle(
+  channelId: string,
+  spinnerMode: string,
+  spinnerEmojis: string[]
+): Promise<string | null> {
+  const channel = await db.channel.findUnique({ where: { id: channelId } });
+  if (!channel) return null;
+
+  // Fetch all enabled titles, ordered by sortOrder
+  const titles = await db.titleItem.findMany({
+    where: { channelId, enabled: true },
+    orderBy: { sortOrder: "asc" },
+  });
+
+  if (titles.length === 0) return null;
+
+  // Use the rotator index (modulo length to wrap around)
+  const idx = channel.titleRotatorIndex % titles.length;
+  const titleItem = titles[idx];
+
+  // Build the final title with optional emoji
+  let finalTitle = titleItem.title;
+  if (titleItem.emoji) {
+    finalTitle = `${titleItem.emoji} ${finalTitle}`;
+  }
+
+  // Apply spinner emoji (overrides title-level emoji if mode is set)
+  if (spinnerMode !== "off" && spinnerEmojis.length > 0) {
+    const emoji = spinnerEmojis[Math.floor(Math.random() * spinnerEmojis.length)];
+    if (spinnerMode === "front" || spinnerMode === "both") {
+      finalTitle = `${emoji} ${finalTitle}`;
+    }
+    if (spinnerMode === "back" || spinnerMode === "both") {
+      finalTitle = `${finalTitle} ${emoji}`;
+    }
+  }
+
+  // Increment the rotator index for the next stream
+  await db.channel.update({
+    where: { id: channelId },
+    data: { titleRotatorIndex: idx + 1 },
+  });
+
+  return finalTitle;
+}
+
+// Get the next thumbnail for a channel using the rotator index.
+// Returns the ThumbnailItem record (with storagePath), or null if none.
+export async function getNextThumbnail(channelId: string): Promise<{
+  id: string;
+  storagePath: string;
+  mimeType: string;
+} | null> {
+  const channel = await db.channel.findUnique({ where: { id: channelId } });
+  if (!channel) return null;
+
+  const thumbnails = await db.thumbnailItem.findMany({
+    where: { channelId, enabled: true },
+    orderBy: { sortOrder: "asc" },
+  });
+
+  if (thumbnails.length === 0) return null;
+
+  const idx = channel.thumbnailRotatorIndex % thumbnails.length;
+  const thumb = thumbnails[idx];
+
+  // Increment rotator index
+  await db.channel.update({
+    where: { id: channelId },
+    data: { thumbnailRotatorIndex: idx + 1 },
+  });
+
+  return {
+    id: thumb.id,
+    storagePath: thumb.storagePath,
+    mimeType: thumb.mimeType,
+  };
+}
+
+// Upload a thumbnail image to YouTube and bind it to a broadcast.
+// Uses the thumbnails.set endpoint (cost: ~50 quota units).
+export async function uploadThumbnail(
+  channelId: string,
+  broadcastId: string,
+  thumbnailPath: string,
+  mimeType: string
+): Promise<string | null> {
+  try {
+    const accessToken = await getValidAccessToken(channelId);
+    const channel = await db.channel.findUnique({ where: { id: channelId } });
+    if (!channel) throw new Error("Channel not found");
+
+    const oauth2Client = new google.auth.OAuth2(
+      channel.clientId,
+      channel.clientSecret,
+      "urn:ietf:wg:oauth:2.0:oob"
+    );
+    oauth2Client.setCredentials({ access_token: accessToken });
+
+    const youtube = google.youtube({ version: "v3", auth: oauth2Client });
+
+    // Read the image file
+    const fs = await import("fs/promises");
+    const buffer = await fs.readFile(thumbnailPath);
+
+    // Upload via thumbnails.set
+    const response = await youtube.thumbnails.set({
+      videoId: broadcastId,
+      requestBody: {},
+      media: {
+        body: buffer,
+        mimeType,
+      },
+    });
+
+    return response.data.items?.[0]?.url || null;
+  } catch (err: any) {
+    console.warn("Failed to upload thumbnail:", err.message);
+    return null;
+  }
+}
+
+// Reset the title rotator index to 0 (called when shuffle is clicked)
+export async function resetTitleRotator(channelId: string): Promise<void> {
+  await db.channel.update({
+    where: { id: channelId },
+    data: { titleRotatorIndex: 0 },
+  });
+}
+
+// Reset the thumbnail rotator index to 0 (called when shuffle is clicked)
+export async function resetThumbnailRotator(channelId: string): Promise<void> {
+  await db.channel.update({
+    where: { id: channelId },
+    data: { thumbnailRotatorIndex: 0 },
+  });
+}
