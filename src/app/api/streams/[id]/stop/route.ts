@@ -7,7 +7,7 @@ import { transitionBroadcast } from "@/lib/youtube";
 import { createNextDaySchedule } from "@/lib/scheduler";
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -28,6 +28,15 @@ export async function POST(
         { error: "Stream is not running" },
         { status: 400 }
       );
+    }
+
+    // Parse body to check if user wants to skip reschedule
+    let skipReschedule = false;
+    try {
+      const body = await req.json();
+      skipReschedule = body?.skipReschedule === true;
+    } catch {
+      // No body or invalid JSON — default to normal behavior (reschedule)
     }
 
     // Stop the FFmpeg process
@@ -79,10 +88,10 @@ export async function POST(
       },
     });
 
-    // If autoCreateSchedule is on, create the next-day schedule
-    // (startAt + 24h, NOT endedAt + 24h)
+    // If autoCreateSchedule is on AND user didn't choose "Stop Only",
+    // create the next-day schedule (startAt + 24h, NOT endedAt + 24h)
     let nextSchedule = null;
-    if (stream.autoCreateSchedule) {
+    if (stream.autoCreateSchedule && !skipReschedule) {
       nextSchedule = await createNextDaySchedule(stream);
       if (nextSchedule) {
         await db.activityLog.create({
@@ -95,6 +104,16 @@ export async function POST(
           },
         });
       }
+    } else if (stream.autoCreateSchedule && skipReschedule) {
+      await db.activityLog.create({
+        data: {
+          userId: user.id,
+          level: "info",
+          category: "stream",
+          message: `Stream stopped without reschedule: ${stream.name}`,
+          details: "User chose 'Stop Only' — no next-day schedule created.",
+        },
+      });
     }
 
     return NextResponse.json({
