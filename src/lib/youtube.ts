@@ -301,6 +301,8 @@ export async function updateBroadcast(
     privacyStatus?: string;
     categoryId?: string;
     tags?: string[];
+    startAt?: Date;
+    endAt?: Date;
   }
 ): Promise<void> {
   const accessToken = await getValidAccessToken(channelId);
@@ -322,8 +324,8 @@ export async function updateBroadcast(
       snippet: {
         title: params.title,
         description: params.description,
-        scheduledStartTime: new Date().toISOString(),
-        scheduledEndTime: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
+        scheduledStartTime: (params.startAt || new Date()).toISOString(),
+        scheduledEndTime: (params.endAt || new Date(Date.now() + 4 * 60 * 60 * 1000)).toISOString(),
         categoryId: params.categoryId || "22",
         tags: params.tags,
       },
@@ -353,6 +355,52 @@ export async function deleteBroadcast(
 
   const youtube = google.youtube({ version: "v3", auth: oauth2Client });
   await youtube.liveBroadcasts.delete({ id: broadcastId });
+}
+
+// === CREATE OR UPDATE BROADCAST ===
+// If the stream already has a broadcastId, UPDATE the existing live event.
+// If not, CREATE a new live event.
+// This prevents duplicate broadcasts in YouTube Studio when a stream is
+// restarted or edited.
+export async function createOrUpdateBroadcast(
+  channelId: string,
+  existingBroadcastId: string | null | undefined,
+  params: {
+    title: string;
+    description: string;
+    startAt: Date;
+    endAt: Date;
+    privacyStatus: string;
+    categoryId?: string;
+    tags?: string[];
+  }
+): Promise<{ broadcastId: string; streamId: string; created: boolean }> {
+  // If we already have a broadcastId, try to update the existing broadcast
+  if (existingBroadcastId) {
+    try {
+      await updateBroadcast(channelId, existingBroadcastId, {
+        title: params.title,
+        description: params.description,
+        privacyStatus: params.privacyStatus,
+        categoryId: params.categoryId,
+        tags: params.tags,
+        startAt: params.startAt,
+        endAt: params.endAt,
+      });
+      console.log(`[YouTube] Updated existing broadcast: ${existingBroadcastId}`);
+      // Return the existing broadcastId + a placeholder streamId
+      // (streamId is only needed for binding, which already happened)
+      return { broadcastId: existingBroadcastId, streamId: "", created: false };
+    } catch (err: any) {
+      console.warn(`[YouTube] Failed to update broadcast ${existingBroadcastId}, creating new:`, err.message);
+      // Fall through to createBroadcast if update fails (e.g. broadcast was deleted)
+    }
+  }
+
+  // No existing broadcastId (or update failed) — create a new one
+  const result = await createBroadcast(channelId, params);
+  console.log(`[YouTube] Created new broadcast: ${result.broadcastId}`);
+  return { ...result, created: true };
 }
 
 // List all upcoming/active broadcasts for the channel

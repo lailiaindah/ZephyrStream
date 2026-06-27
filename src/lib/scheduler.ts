@@ -8,7 +8,7 @@
 
 import { db } from "@/lib/db";
 import { startFFmpegStream, isProcessRunning } from "@/lib/ffmpeg";
-import { createBroadcast, uploadThumbnail, pickTitleAndThumbnail, refreshAccessToken } from "@/lib/youtube";
+import { createOrUpdateBroadcast, uploadThumbnail, pickTitleAndThumbnail, refreshAccessToken } from "@/lib/youtube";
 import { runCleanupIfNeeded } from "@/lib/cleanup";
 import { runBackupIfNeeded } from "@/lib/backup";
 
@@ -387,8 +387,9 @@ async function startStreamInternal(stream: any) {
         console.log(`[Scheduler] No pre-picked title, using stream.name: "${broadcastTitle}"`);
       }
 
-      const { broadcastId, streamId: ytStreamId } = await createBroadcast(
+      const { broadcastId, streamId: ytStreamId, created } = await createOrUpdateBroadcast(
         stream.channelId,
+        stream.broadcastId, // pass existing broadcastId for update
         {
           title: broadcastTitle,
           description: stream.description || "",
@@ -425,11 +426,13 @@ async function startStreamInternal(stream: any) {
         where: { id: stream.id },
         data: {
           broadcastId,
-          streamId: ytStreamId,
-          broadcastStatus: "created",
+          // Only update streamId if a new broadcast was created
+          ...(created ? { streamId: ytStreamId } : {}),
+          broadcastStatus: created ? "created" : "updated",
           privacyStatus: replayPrivacy,
         },
       });
+      console.log(`[Scheduler] Broadcast ${created ? "created" : "updated"}: ${broadcastId}`);
     } catch (err: any) {
       console.warn("[Scheduler] Failed to create broadcast:", err.message);
     }

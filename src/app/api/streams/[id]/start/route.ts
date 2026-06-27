@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { startFFmpegStream, isProcessRunning } from "@/lib/ffmpeg";
-import { createBroadcast, uploadThumbnail } from "@/lib/youtube";
+import { createOrUpdateBroadcast, uploadThumbnail } from "@/lib/youtube";
 
 export async function POST(
   _req: NextRequest,
@@ -117,8 +117,9 @@ export async function POST(
           console.log(`[Start] No pre-picked title, using stream.name: "${broadcastTitle}"`);
         }
 
-        const { broadcastId, streamId: ytStreamId } = await createBroadcast(
+        const { broadcastId, streamId: ytStreamId, created } = await createOrUpdateBroadcast(
           stream.channelId,
+          stream.broadcastId, // pass existing broadcastId for update
           {
             title: broadcastTitle,
             description: stream.description || "",
@@ -130,6 +131,8 @@ export async function POST(
             tags: stream.tags ? stream.tags.split(",").map((t) => t.trim()) : undefined,
           }
         );
+        // Only update streamId if a new broadcast was created
+        // (existing broadcast already has stream binding)
 
         // === UPLOAD PRE-PICKED THUMBNAIL (resolved at schedule creation time) ===
         if (stream.resolvedThumbnailPath) {
@@ -156,12 +159,15 @@ export async function POST(
           where: { id: stream.id },
           data: {
             broadcastId,
-            streamId: ytStreamId,
-            broadcastStatus: "created",
+            // Only update streamId if a new broadcast was created
+            // (existing broadcast already has stream binding from first creation)
+            ...(created ? { streamId: ytStreamId } : {}),
+            broadcastStatus: created ? "created" : "updated",
             // Persist the resolved replay privacy for the stop handler
             privacyStatus: replayPrivacy,
           },
         });
+        console.log(`[Start] Broadcast ${created ? "created" : "updated"}: ${broadcastId}`);
       } catch (err: any) {
         console.warn("Failed to create broadcast:", err.message);
         // Continue without broadcast — the stream key will still work
