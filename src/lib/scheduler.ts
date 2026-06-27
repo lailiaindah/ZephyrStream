@@ -485,8 +485,6 @@ async function startStreamInternal(stream: any) {
 // Internal: stop a stream (FFmpeg + YouTube transition)
 async function stopStreamInternal(stream: any) {
   // === GUARD: prevent double-stop race condition ===
-  // Re-fetch to check status. If already ended/error, skip (another tick
-  // may have already stopped it, or the ghost cleanup ran first).
   const fresh = await db.stream.findUnique({ where: { id: stream.id } });
   if (!fresh || fresh.status === "ended" || fresh.status === "error") {
     console.log(`[Scheduler] Stream ${stream.id} already ${fresh?.status || "missing"}, skip stop`);
@@ -496,18 +494,38 @@ async function stopStreamInternal(stream: any) {
   const { stopFFmpegStream } = await import("@/lib/ffmpeg");
   const { transitionBroadcast } = await import("@/lib/youtube");
 
+  // 1. Stop FFmpeg first (stop pushing video to YouTube)
   if (stream.pid) {
     await stopFFmpegStream(stream.pid);
   }
 
+  // 2. Transition YouTube broadcast to "complete" WITH RETRY
+  // YouTube needs time to process the transition. The retry logic in
+  // transitionBroadcast() will wait and retry up to 5 times (5s, 10s, 20s, 40s, 80s).
+  // This is critical because if the broadcast stays "live" in YouTube,
+  // the next-day schedule's createOrUpdateBroadcast will fail.
+  let transitionSuccess = false;
   if (stream.channelId && stream.broadcastId) {
     try {
       await transitionBroadcast(stream.channelId, stream.broadcastId, "complete");
+      transitionSuccess = true;
+      console.log(`[Scheduler] YouTube broadcast ${stream.broadcastId} completed successfully`);
     } catch (err: any) {
-      console.warn("[Scheduler] Failed to transition broadcast:", err.message);
+      console.warn(`[Scheduler] YouTube broadcast transition failed after retries: ${err.message}`);
+      // Log to activity so user knows YouTube may still show "live"
+      await db.activityLog.create({
+        data: {
+          userId: stream.userId,
+          level: "warn",
+          category: "stream",
+          message: `YouTube broadcast may still be processing: ${stream.name}`,
+          details: `Transition to "complete" failed: ${err.message}. YouTube Studio may need manual check.`,
+        },
+      }).catch(() => {});
     }
   }
 
+  // 3. Mark stream as ended in database
   await db.stream.update({
     where: { id: stream.id },
     data: {
@@ -526,7 +544,8 @@ async function stopStreamInternal(stream: any) {
     },
   });
 
-  // If autoCreateSchedule is on, create the next-day schedule
+  // 4. Create next-day schedule (even if YouTube transition failed —
+  // the stream key is the same, so FFmpeg will push to YouTube regardless)
   if (stream.autoCreateSchedule) {
     await createNextDaySchedule(stream);
   }

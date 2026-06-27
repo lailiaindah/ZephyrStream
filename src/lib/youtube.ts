@@ -267,10 +267,15 @@ export async function createBroadcast(
 }
 
 // Transition a broadcast to the next status (testing -> live -> complete)
+// Transition a broadcast to the next status (testing -> live -> complete).
+// Includes RETRY logic because YouTube often needs a few seconds to process
+// state transitions. Without retries, "complete" transition can fail with
+// "The broadcast is not in a state that can be transitioned to complete".
 export async function transitionBroadcast(
   channelId: string,
   broadcastId: string,
-  status: "testing" | "live" | "complete"
+  status: "testing" | "live" | "complete",
+  maxRetries: number = 5
 ): Promise<void> {
   const accessToken = await getValidAccessToken(channelId);
   const channel = await db.channel.findUnique({ where: { id: channelId } });
@@ -284,11 +289,37 @@ export async function transitionBroadcast(
   oauth2Client.setCredentials({ access_token: accessToken });
 
   const youtube = google.youtube({ version: "v3", auth: oauth2Client });
-  await youtube.liveBroadcasts.transition({
-    id: broadcastId,
-    broadcastStatus: status,
-    part: ["id", "status", "contentDetails"],
-  });
+
+  let lastError: any = null;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await youtube.liveBroadcasts.transition({
+        id: broadcastId,
+        broadcastStatus: status,
+        part: ["id", "status", "contentDetails"],
+      });
+      console.log(`[YouTube] Broadcast ${broadcastId} transitioned to "${status}" (attempt ${attempt})`);
+      return; // success
+    } catch (err: any) {
+      lastError = err;
+      const isRetriable =
+        err.message?.includes("not in a state") ||
+        err.message?.includes("transition") ||
+        err.message?.includes("rate") ||
+        err.message?.includes("backend");
+
+      if (!isRetriable || attempt === maxRetries) {
+        console.warn(`[YouTube] Transition to "${status}" failed permanently (attempt ${attempt}/${maxRetries}):`, err.message);
+        throw err;
+      }
+
+      // Exponential backoff: 5s, 10s, 20s, 40s, 80s
+      const backoffMs = 5000 * Math.pow(2, attempt - 1);
+      console.warn(`[YouTube] Transition to "${status}" failed (attempt ${attempt}/${maxRetries}), retrying in ${backoffMs / 1000}s: ${err.message}`);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+    }
+  }
+  throw lastError;
 }
 
 // Update a broadcast's snippet (title, description, etc.)

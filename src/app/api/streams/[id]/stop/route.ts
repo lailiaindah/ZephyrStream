@@ -36,7 +36,9 @@ export async function POST(
       stopped = await stopFFmpegStream(stream.pid);
     }
 
-    // Transition the YouTube broadcast to complete (if applicable)
+    // Transition the YouTube broadcast to complete (with retry).
+    // YouTube needs time to process the transition — if it fails, the
+    // retry logic will wait and retry up to 5 times.
     if (stream.channelId && stream.broadcastId) {
       try {
         await transitionBroadcast(
@@ -44,8 +46,18 @@ export async function POST(
           stream.broadcastId,
           "complete"
         );
+        console.log(`[Stop] YouTube broadcast ${stream.broadcastId} completed successfully`);
       } catch (err: any) {
-        console.warn("Failed to transition broadcast to complete:", err.message);
+        console.warn(`[Stop] YouTube broadcast transition failed after retries: ${err.message}`);
+        await db.activityLog.create({
+          data: {
+            userId: user.id,
+            level: "warn",
+            category: "stream",
+            message: `YouTube broadcast may still be processing: ${stream.name}`,
+            details: `Transition to "complete" failed: ${err.message}. YouTube Studio may need manual check.`,
+          },
+        }).catch(() => {});
       }
     }
 
