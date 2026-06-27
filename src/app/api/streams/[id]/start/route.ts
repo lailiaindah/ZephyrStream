@@ -198,6 +198,7 @@ export async function POST(
         startedAt: new Date(),
         endedAt: null,
         lastError: null,
+        retryCount: 0, // Reset retry count on manual start
       },
     });
 

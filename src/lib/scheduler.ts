@@ -464,6 +464,7 @@ async function startStreamInternal(stream: any) {
       startedAt: new Date(),
       endedAt: null,
       lastError: null,
+      retryCount: 0, // Reset retry count on successful start
     },
   });
 
