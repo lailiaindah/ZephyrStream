@@ -18,6 +18,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { User, Shield, Server, Cpu, Save, Loader2, CheckCircle2, Download, RefreshCw, GitBranch, AlertCircle, Database, Plus, Trash2 } from "lucide-react";
+import { APP_VERSION } from "@/lib/constants";
 
 export function SettingsView({ user }: { user: any }) {
   const queryClient = useQueryClient();
@@ -167,6 +168,10 @@ export function SettingsView({ user }: { user: any }) {
           <div className="flex items-center gap-2 mb-4">
             <GitBranch className="h-4 w-4 text-emerald-300" />
             <h3 className="text-sm font-semibold text-white">App Updates</h3>
+            <Badge variant="outline" className="ml-auto border-cyan-500/40 text-cyan-300 text-[10px]">
+              v{APP_VERSION}
+              {checkUpdateMutation.data?.currentCommit && ` · ${checkUpdateMutation.data.currentCommit}`}
+            </Badge>
           </div>
           <div className="space-y-3">
             <p className="text-xs text-slate-400">
@@ -366,7 +371,14 @@ export function SettingsView({ user }: { user: any }) {
           </p>
           <div className="mt-3 flex items-center gap-2 text-xs">
             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="text-slate-400">Version 1.1.0 — with auto scheduler</span>
+            <span className="text-slate-400">
+              Version {APP_VERSION}
+              {checkUpdateMutation.data?.currentCommit && (
+                <span className="text-slate-500 ml-1">
+                  (commit {checkUpdateMutation.data.currentCommit})
+                </span>
+              )}
+            </span>
           </div>
         </div>
       </Card>
