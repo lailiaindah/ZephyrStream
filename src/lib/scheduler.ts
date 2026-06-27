@@ -504,11 +504,9 @@ async function stopStreamInternal(stream: any) {
   // transitionBroadcast() will wait and retry up to 5 times (5s, 10s, 20s, 40s, 80s).
   // This is critical because if the broadcast stays "live" in YouTube,
   // the next-day schedule's createOrUpdateBroadcast will fail.
-  let transitionSuccess = false;
   if (stream.channelId && stream.broadcastId) {
     try {
       await transitionBroadcast(stream.channelId, stream.broadcastId, "complete");
-      transitionSuccess = true;
       console.log(`[Scheduler] YouTube broadcast ${stream.broadcastId} completed successfully`);
     } catch (err: any) {
       console.warn(`[Scheduler] YouTube broadcast transition failed after retries: ${err.message}`);
