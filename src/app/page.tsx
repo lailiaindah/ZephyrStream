@@ -17,11 +17,13 @@ import { FileManager } from "@/components/files/file-manager";
 import { SettingsView } from "@/components/dashboard/settings-view";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Radio, RefreshCw, Plus, Server } from "lucide-react";
+import { Radio, RefreshCw, Plus, Server, Wifi, WifiOff } from "lucide-react";
+import { useRealtimeUpdates } from "@/hooks/use-realtime";
 
 export default function Home() {
   const queryClient = useQueryClient();
   const [view, setView] = useState<ViewKey>("dashboard");
+  const { connected: realtimeConnected } = useRealtimeUpdates();
 
   // Check current user on mount
   const { data: authData, isLoading: authLoading } = useQuery({
@@ -327,10 +329,25 @@ export default function Home() {
         <footer className="mt-auto border-t border-slate-800/60 px-6 py-3">
           <div className="flex items-center justify-between text-xs text-slate-500">
             <span>ZephyrStream v1.0.0 — Multi-Channel Live Streaming</span>
-            <span className="flex items-center gap-1">
-              <Server className="h-3 w-3" />
-              <span>VPS Online</span>
-            </span>
+            <div className="flex items-center gap-4">
+              <span className="flex items-center gap-1">
+                {realtimeConnected ? (
+                  <>
+                    <Wifi className="h-3 w-3 text-emerald-400" />
+                    <span className="text-emerald-400">Realtime Connected</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="h-3 w-3 text-slate-500" />
+                    <span>Realtime Offline</span>
+                  </>
+                )}
+              </span>
+              <span className="flex items-center gap-1">
+                <Server className="h-3 w-3" />
+                <span>VPS Online</span>
+              </span>
+            </div>
           </div>
         </footer>
       </div>

@@ -20,6 +20,10 @@ export interface FFmpegOptions {
   loopUntilDuration?: boolean;
   durationSeconds?: number;
   logFile?: string;
+  // Auto-restart options
+  maxRetries?: number;
+  retryCount?: number;
+  streamId?: string; // for logging
 }
 
 // Map our encoder choice to FFmpeg codec strings

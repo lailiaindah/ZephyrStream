@@ -190,6 +190,7 @@ model Stream {
   endedAt         DateTime?
   lastError       String?
   logFile         String?
+  retryCount      Int       @default(0) // FFmpeg auto-restart attempt count (reset on manual start)
 
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
