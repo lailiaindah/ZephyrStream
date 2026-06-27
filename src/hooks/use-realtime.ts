@@ -39,6 +39,8 @@ export function useRealtimeUpdates() {
             reconnectionAttempts: 10,
           });
           setupHandlers(socket);
+          // Update ref so subscribeToStreamLog uses the new socket
+          socketRef.current = socket;
         }
       }, 3000);
 
