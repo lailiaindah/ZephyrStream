@@ -25,6 +25,7 @@ model User {
   files        UploadedFile[]
   titles       TitleItem[]
   thumbnails   ThumbnailItem[]
+  templates    StreamTemplate[]
   sessions     Session[]
 }
 
@@ -267,4 +268,46 @@ model ActivityLog {
   @@index([userId])
   @@index([category])
   @@index([createdAt])
+}
+
+// Stream configuration templates — reusable presets for quick stream creation
+model StreamTemplate {
+  id              String   @id @default(cuid())
+  userId          String
+  name            String
+  description     String?
+
+  // FFmpeg configuration
+  encoder         String   @default("auto")
+  copyMode        Boolean  @default(false)
+  videoBitrate    String   @default("4500k")
+  audioBitrate    String   @default("160k")
+  resolution      String   @default("1920x1080")
+  fps             Int      @default(30)
+  preset          String   @default("veryfast")
+
+  // Stream settings
+  privacyStatus   String   @default("public")
+  categoryId      String   @default("22")
+  tags            String?
+  playlistId      String?
+  alteredContent  Boolean  @default(false)
+
+  // Duration
+  minHours        Float    @default(2.0)
+  maxHours        Float    @default(4.0)
+
+  // Spinner
+  spinnerMode     String   @default("off")
+  spinnerEmojis   String?
+
+  // Schedule settings
+  autoCreateSchedule Boolean @default(false)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

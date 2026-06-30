@@ -1,0 +1,25 @@
+# ZephyrStream — Main App Service (port 3000)
+# Install: sudo bash deploy/install-services.sh
+[Unit]
+Description=ZephyrStream — Multi-Channel YouTube Live Streaming Platform
+Documentation=https://github.com/lailiaindah/ZephyrStream
+After=network.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__PROJECT_DIR__
+EnvironmentFile=__PROJECT_DIR__/.env
+ExecStart=__BUN_PATH__ run start
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=__PROJECT_DIR__
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

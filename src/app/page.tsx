@@ -326,7 +326,7 @@ export default function Home() {
 
         <footer className="mt-auto border-t border-slate-800/60 px-6 py-3">
           <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>ZephyrStream v1.0.0 — Multi-Channel Live Streaming</span>
+            <span>ZephyrStream v1.3.0 — Multi-Channel Live Streaming</span>
             <span className="flex items-center gap-1">
               <Server className="h-3 w-3" />
               <span>VPS Online</span>

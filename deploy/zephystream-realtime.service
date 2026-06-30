@@ -1,0 +1,24 @@
+# ZephyrStream — Realtime Service (port 3003, Socket.io)
+# Install: sudo bash deploy/install-services.sh
+[Unit]
+Description=ZephyrStream Realtime Service (Socket.io)
+Documentation=https://github.com/lailiaindah/ZephyrStream
+After=network.target zephystream.service
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__PROJECT_DIR__/mini-services/realtime
+ExecStart=__BUN_PATH__ run dev
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=__PROJECT_DIR__
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

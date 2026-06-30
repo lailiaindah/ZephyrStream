@@ -504,19 +504,118 @@ export async function createNextDaySchedule(stream: any) {
 }
 
 // Start the scheduler (call once on server boot)
+import cron from "node-cron";
+
+let cronJob: cron.ScheduledTask | null = null;
+let immediateInterval: NodeJS.Timeout | null = null;
+
 export function startScheduler() {
-  if (schedulerInterval) return;
-  console.log("[Scheduler] Starting stream scheduler (30s interval)");
-  schedulerInterval = setInterval(schedulerTick, CHECK_INTERVAL_MS);
-  // Run once immediately on start
+  if (cronJob) return; // already running
+
+  console.log("[Scheduler] Starting persistent scheduler (node-cron, every 30s)");
+
+  // === AUTO-RECOVERY ON SERVER RESTART ===
+  // Clean up stale states from FFmpeg processes that were killed by restart
+  recoverFromServerRestart().catch((err) =>
+    console.error("[Scheduler] Auto-recovery error:", err)
+  );
+
+  // node-cron: re-syncs to wall clock, more reliable than setInterval
+  cronJob = cron.schedule("*/30 * * * * *", () => {
+    schedulerTick().catch((err) =>
+      console.error("[Scheduler] Cron tick error:", err)
+    );
+  });
+
+  // Run first tick immediately
   schedulerTick().catch(console.error);
+
+  // Fallback interval
+  if (!immediateInterval) {
+    immediateInterval = setInterval(() => {
+      schedulerTick().catch(console.error);
+    }, CHECK_INTERVAL_MS);
+  }
+}
+
+// Auto-recovery: clean up stale states after server restart
+async function recoverFromServerRestart() {
+  console.log("[Scheduler] Running auto-recovery (server restart cleanup)...");
+  let recovered = 0;
+
+  // 1. Fix "ghost live" streams — status is "live" but PID is dead
+  const liveStreams = await db.stream.findMany({
+    where: { status: "live" },
+    include: { channel: true },
+  });
+
+  for (const stream of liveStreams) {
+    const isDead = !stream.pid || !isProcessRunning(stream.pid);
+
+    if (isDead) {
+      console.log(`[Recovery] Stream ${stream.id} was live but PID ${stream.pid} is dead`);
+      const minRunMs = 60 * 1000;
+      const ranLongEnough = stream.startedAt &&
+        (Date.now() - stream.startedAt.getTime()) > minRunMs;
+
+      await db.stream.update({
+        where: { id: stream.id },
+        data: {
+          status: ranLongEnough ? "ended" : "error",
+          endedAt: new Date(),
+          pid: null,
+          lastError: ranLongEnough ? null : "Server restarted while stream was live",
+          retryCount: 0,
+        },
+      });
+
+      await db.activityLog.create({
+        data: {
+          userId: stream.userId,
+          level: ranLongEnough ? "info" : "warn",
+          category: "stream",
+          message: `Auto-recovery: "${stream.name}" was live during server restart`,
+          details: ranLongEnough ? "Marked as ended." : "Marked as error.",
+        },
+      }).catch(() => {});
+
+      if (stream.autoCreateSchedule) {
+        await createNextDaySchedule(stream);
+      }
+      recovered++;
+    }
+  }
+
+  // 2. Fix "preparing" streams — stuck in preparing
+  const preparing = await db.stream.findMany({ where: { status: "preparing" } });
+  for (const stream of preparing) {
+    await db.stream.update({
+      where: { id: stream.id },
+      data: { status: "scheduled", pid: null, lastError: "Stuck in preparing after restart" },
+    });
+    recovered++;
+  }
+
+  // 3. Fix "stopping" streams — stuck in stopping
+  const stopping = await db.stream.findMany({ where: { status: "stopping" } });
+  for (const stream of stopping) {
+    await db.stream.update({
+      where: { id: stream.id },
+      data: { status: "ended", endedAt: new Date(), pid: null },
+    });
+    recovered++;
+  }
+
+  if (recovered > 0) {
+    console.log(`[Scheduler] Auto-recovery: ${recovered} stream(s) recovered`);
+  } else {
+    console.log("[Scheduler] Auto-recovery: no stale streams found");
+  }
 }
 
 // Stop the scheduler
 export function stopScheduler() {
-  if (schedulerInterval) {
-    clearInterval(schedulerInterval);
-    schedulerInterval = null;
-    console.log("[Scheduler] Stopped");
-  }
+  if (cronJob) { cronJob.stop(); cronJob = null; }
+  if (immediateInterval) { clearInterval(immediateInterval); immediateInterval = null; }
+  console.log("[Scheduler] Stopped");
 }

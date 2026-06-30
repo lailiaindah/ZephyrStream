@@ -93,6 +93,48 @@ Each channel has its own thumbnail collection:
 - Color-coded by level (info / success / warning / error)
 - Categorized by type for easy filtering
 
+### 🖥️ Systemd Service for Production
+- **Auto-start on VPS boot** — both main app (port 3000) and realtime service (port 3003)
+- **Auto-restart on crash** — systemd `Restart=always` with 5-second delay
+- One-command installer: `sudo bash deploy/install-services.sh`
+- Service files included in `deploy/` directory
+- Security hardening: `NoNewPrivileges`, `ProtectSystem=strict`, `PrivateTmp`
+
+### 🔄 Auto-Recovery on Server Restart
+- When VPS/server restarts, FFmpeg processes are killed but DB still shows "live"
+- Scheduler runs auto-recovery on startup:
+  - "live" streams with dead PID → marked as "ended" or "error"
+  - "preparing" streams → reset to "scheduled"
+  - "stopping" streams → marked as "ended"
+- If stream ran >1 minute before restart → marked as "ended" (clean)
+- If stream ran <1 minute → marked as "error" (with retry logic)
+- Auto-creates next-day schedule if `autoCreateSchedule` is on
+- Activity logs all recovery actions
+
+### 📋 Stream Templates/Presets
+- Save stream configuration as reusable templates
+- Template stores: encoder, bitrate, resolution, fps, preset, privacy, category, tags, playlist ID, altered content, duration (min/max hours), spinner mode + emojis, autoCreateSchedule
+- "New Stream from Template" — pre-fills the form with saved config
+- Templates are per-user (not shared)
+- API: `GET/POST /api/templates`, `DELETE /api/templates/[id]`
+
+### 📊 Quota Usage Dashboard
+- Tracks YouTube Data API v3 quota usage per day
+- Estimates based on API call costs:
+  - Broadcast create: ~100 units (insert + bind)
+  - Broadcast update: ~50 units
+  - Broadcast complete: ~50 units
+  - Thumbnail upload: ~50 units
+- Shows: used, remaining, usage %, events today
+- Per-channel quota calculation (10,000 units × number of channels)
+- API: `GET /api/quota`
+
+### 🔲 Batch Operations
+- Multi-select streams with checkboxes
+- Bulk start, bulk stop, bulk delete
+- Results show per-stream success/failure
+- API: `POST /api/streams/batch` with `{ action, ids[] }`
+
 ---
 
 ## 🎨 Design
@@ -501,4 +543,4 @@ For issues, feature requests, or questions, please open an issue on [GitHub](htt
 
 ---
 
-**ZephyrStream v1.0.0** — Built with ❤️ for the streaming community.
+**ZephyrStream v1.3.0** — Built with ❤️ for the streaming community.
