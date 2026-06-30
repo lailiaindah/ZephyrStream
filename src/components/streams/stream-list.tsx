@@ -30,6 +30,7 @@ import {
   Youtube,
   Calendar,
   Repeat,
+  CheckSquare,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -41,6 +42,8 @@ export function StreamList() {
   const [logStreamId, setLogStreamId] = useState<string | null>(null);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [stopDialogStream, setStopDialogStream] = useState<any>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBatchBar, setShowBatchBar] = useState(false);
 
   // Fetch channels for the filter
   const { data: channelsData } = useQuery({
@@ -193,6 +196,46 @@ export function StreamList() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  // Batch operations
+  const batchMutation = useMutation({
+    mutationFn: async ({ action, ids }: { action: string; ids: string[] }) => {
+      const res = await fetch("/api/streams/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ids }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data, variables) => {
+      toast.success(`Batch ${variables.action}: ${data.succeeded}/${data.total} succeeded`);
+      queryClient.invalidateQueries({ queryKey: ["streams"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      setSelectedIds(new Set());
+      setShowBatchBar(false);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (!data) return;
+    if (selectedIds.size === data.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(data.map((s) => s.id)));
+    }
+  };
+
   const handleSubmit = (payload: any) => {
     if (editing) {
       updateMutation.mutate({ id: editing.id, payload });
@@ -222,17 +265,82 @@ export function StreamList() {
             Click a channel below to filter — streams are organized per channel
           </p>
         </div>
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-          className="bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New Stream
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowBatchBar(!showBatchBar)}
+            className="border-slate-700 text-slate-300 hover:bg-slate-800"
+          >
+            <CheckSquare className="h-4 w-4 mr-2" />
+            {showBatchBar ? "Cancel" : "Select"}
+          </Button>
+          <Button
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
+            className="bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            New Stream
+          </Button>
+        </div>
       </div>
+
+      {/* Batch action bar */}
+      {showBatchBar && data && data.length > 0 && (
+        <div className="flex items-center gap-3 p-3 rounded-lg border border-cyan-500/30 bg-cyan-500/5">
+          <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selectedIds.size === data.length}
+              onChange={toggleSelectAll}
+              className="rounded border-slate-600"
+            />
+            Select All ({data.length})
+          </label>
+          <span className="text-xs text-cyan-300">
+            {selectedIds.size} selected
+          </span>
+          <div className="flex gap-2 ml-auto">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={selectedIds.size === 0 || batchMutation.isPending}
+              onClick={() => batchMutation.mutate({ action: "start", ids: Array.from(selectedIds) })}
+              className="border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+            >
+              <Play className="h-3.5 w-3.5 mr-1" />
+              Start All
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={selectedIds.size === 0 || batchMutation.isPending}
+              onClick={() => batchMutation.mutate({ action: "stop", ids: Array.from(selectedIds) })}
+              className="border-rose-500/40 text-rose-300 hover:bg-rose-500/10"
+            >
+              <Square className="h-3.5 w-3.5 mr-1" />
+              Stop All
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={selectedIds.size === 0 || batchMutation.isPending}
+              onClick={() => {
+                if (confirm(`Delete ${selectedIds.size} stream(s)? This cannot be undone.`)) {
+                  batchMutation.mutate({ action: "delete", ids: Array.from(selectedIds) });
+                }
+              }}
+              className="border-rose-500/40 text-rose-300 hover:bg-rose-500/10"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              Delete All
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Channel filter pills */}
       <div className="flex flex-wrap gap-2">
@@ -329,11 +437,22 @@ export function StreamList() {
           {data.map((stream) => (
             <Card
               key={stream.id}
-              className="border-slate-800/60 bg-slate-900/40 backdrop-blur-sm zephyr-card-hover overflow-hidden"
+              className={cn(
+                "border-slate-800/60 bg-slate-900/40 backdrop-blur-sm zephyr-card-hover overflow-hidden",
+                showBatchBar && selectedIds.has(stream.id) && "border-cyan-500/50 ring-1 ring-cyan-500/20"
+              )}
             >
               <div className="p-5">
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex items-center gap-3 min-w-0">
+                    {showBatchBar && (
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(stream.id)}
+                        onChange={() => toggleSelect(stream.id)}
+                        className="rounded border-slate-600 shrink-0 mt-1"
+                      />
+                    )}
                     <div className={`flex items-center justify-center h-10 w-10 rounded-lg shrink-0 ${
                       stream.status === "live"
                         ? "bg-red-500/20 border border-red-500/40 zephyr-glow-rose"
