@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,8 +25,9 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { ENCODER_CHOICES, PRIVACY_OPTIONS, SPINNER_MODES, YOUTUBE_CATEGORIES, EMOJI_CATALOG, PRESET_CHOICES } from "@/lib/constants";
-import { Loader2, Youtube, Key, FileVideo, Settings2, Sparkles, Type, Shuffle, Calendar, Clock, Repeat } from "lucide-react";
+import { Loader2, Youtube, Key, FileVideo, Settings2, Sparkles, Type, Shuffle, Calendar, Clock, Repeat, Save, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface StreamFormProps {
   open: boolean;
@@ -49,6 +50,7 @@ function StreamFormInner({
   channelsData,
   filesData,
 }: StreamFormProps & { channelsData: any[]; filesData: any[] }) {
+  const queryClient = useQueryClient();
   const [name, setName] = useState(editingStream?.name || "");
   const [description, setDescription] = useState(editingStream?.description || "");
   const [channelId, setChannelId] = useState<string>(
@@ -139,6 +141,70 @@ function StreamFormInner({
     setDescription((prev) => `${prev}${token}`);
   };
 
+  // === TEMPLATE FEATURES ===
+  const { data: templates } = useQuery({
+    queryKey: ["templates"],
+    queryFn: async () => {
+      const res = await fetch("/api/templates");
+      const data = await res.json();
+      return (data.templates as any[]) || [];
+    },
+  });
+
+  const saveTemplateMutation = useMutation({
+    mutationFn: async (templateName: string) => {
+      const res = await fetch("/api/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: templateName,
+          encoder, copyMode, videoBitrate, audioBitrate, resolution, fps, preset,
+          privacyStatus, categoryId, tags, playlistId, alteredContent,
+          minHours, maxHours, spinnerMode,
+          spinnerEmojis: selectedEmojis,
+          autoCreateSchedule,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Template saved!");
+      queryClient.invalidateQueries({ queryKey: ["templates"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const loadTemplate = (templateId: string) => {
+    const t = templates?.find((t) => t.id === templateId);
+    if (!t) return;
+    setEncoder(t.encoder || "auto");
+    setCopyMode(t.copyMode ?? false);
+    setVideoBitrate(t.videoBitrate || "4500k");
+    setAudioBitrate(t.audioBitrate || "160k");
+    setResolution(t.resolution || "1920x1080");
+    setFps(t.fps || 30);
+    setPreset(t.preset || "veryfast");
+    setPrivacyStatus(t.privacyStatus || "public");
+    setCategoryId(t.categoryId || "22");
+    setTags(t.tags || "");
+    setPlaylistId(t.playlistId || "");
+    setAlteredContent(t.alteredContent ?? false);
+    setMinHours(t.minHours ?? 2);
+    setMaxHours(t.maxHours ?? 4);
+    setSpinnerMode(t.spinnerMode || "off");
+    setSelectedEmojis(t.spinnerEmojis ? JSON.parse(t.spinnerEmojis) : []);
+    setAutoCreateSchedule(t.autoCreateSchedule ?? false);
+    toast.success(`Loaded template: ${t.name}`);
+  };
+
+  const handleSaveTemplate = () => {
+    const templateName = prompt("Enter template name:", `${name} - Preset`);
+    if (!templateName) return;
+    saveTemplateMutation.mutate(templateName);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-slate-950 border-slate-800 text-white max-w-3xl max-h-[92vh] overflow-y-auto">
@@ -151,6 +217,36 @@ function StreamFormInner({
             Configure a live stream. Streaming uses the YouTube stream key (not the API) — saving your Google Cloud quota.
           </DialogDescription>
         </DialogHeader>
+
+        {/* Template selector + save button */}
+        <div className="flex items-center gap-2 p-3 rounded-lg border border-slate-800 bg-slate-900/60">
+          <FolderOpen className="h-4 w-4 text-cyan-300 shrink-0" />
+          <Select value="" onValueChange={(v) => v && loadTemplate(v)}>
+            <SelectTrigger className="flex-1 bg-slate-900 border-slate-700 text-white">
+              <SelectValue placeholder="Load from template..." />
+            </SelectTrigger>
+            <SelectContent className="bg-slate-900 border-slate-700">
+              {(templates || []).map((t) => (
+                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={handleSaveTemplate}
+            disabled={saveTemplateMutation.isPending}
+            className="border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10"
+          >
+            {saveTemplateMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-3.5 w-3.5 mr-1" />
+            )}
+            Save as Template
+          </Button>
+        </div>
 
         <form onSubmit={handleSubmit}>
           <Tabs defaultValue="basic" className="w-full">
