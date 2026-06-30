@@ -7,7 +7,7 @@ import { transitionBroadcast } from "@/lib/youtube";
 import { createNextDaySchedule } from "@/lib/scheduler";
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -30,13 +30,24 @@ export async function POST(
       );
     }
 
+    // Parse body to check if user wants to skip reschedule
+    let skipReschedule = false;
+    try {
+      const body = await req.json();
+      skipReschedule = body?.skipReschedule === true;
+    } catch {
+      // No body or invalid JSON — default to normal behavior (reschedule)
+    }
+
     // Stop the FFmpeg process
     let stopped = false;
     if (stream.pid) {
       stopped = await stopFFmpegStream(stream.pid);
     }
 
-    // Transition the YouTube broadcast to complete (if applicable)
+    // Transition the YouTube broadcast to complete (with retry).
+    // YouTube needs time to process the transition — if it fails, the
+    // retry logic will wait and retry up to 5 times.
     if (stream.channelId && stream.broadcastId) {
       try {
         await transitionBroadcast(
@@ -44,8 +55,18 @@ export async function POST(
           stream.broadcastId,
           "complete"
         );
+        console.log(`[Stop] YouTube broadcast ${stream.broadcastId} completed successfully`);
       } catch (err: any) {
-        console.warn("Failed to transition broadcast to complete:", err.message);
+        console.warn(`[Stop] YouTube broadcast transition failed after retries: ${err.message}`);
+        await db.activityLog.create({
+          data: {
+            userId: user.id,
+            level: "warn",
+            category: "stream",
+            message: `YouTube broadcast may still be processing: ${stream.name}`,
+            details: `Transition to "complete" failed: ${err.message}. YouTube Studio may need manual check.`,
+          },
+        }).catch(() => {});
       }
     }
 
@@ -67,10 +88,10 @@ export async function POST(
       },
     });
 
-    // If autoCreateSchedule is on, create the next-day schedule
-    // (startAt + 24h, NOT endedAt + 24h)
+    // If autoCreateSchedule is on AND user didn't choose "Stop Only",
+    // create the next-day schedule (startAt + 24h, NOT endedAt + 24h)
     let nextSchedule = null;
-    if (stream.autoCreateSchedule) {
+    if (stream.autoCreateSchedule && !skipReschedule) {
       nextSchedule = await createNextDaySchedule(stream);
       if (nextSchedule) {
         await db.activityLog.create({
@@ -83,6 +104,16 @@ export async function POST(
           },
         });
       }
+    } else if (stream.autoCreateSchedule && skipReschedule) {
+      await db.activityLog.create({
+        data: {
+          userId: user.id,
+          level: "info",
+          category: "stream",
+          message: `Stream stopped without reschedule: ${stream.name}`,
+          details: "User chose 'Stop Only' — no next-day schedule created.",
+        },
+      });
     }
 
     return NextResponse.json({

@@ -17,7 +17,8 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { User, Shield, Server, Cpu, Save, Loader2, CheckCircle2, Download, RefreshCw, GitBranch, AlertCircle } from "lucide-react";
+import { User, Shield, Server, Cpu, Save, Loader2, CheckCircle2, Download, RefreshCw, GitBranch, AlertCircle, Database, Plus, Trash2 } from "lucide-react";
+import { APP_VERSION } from "@/lib/constants";
 
 export function SettingsView({ user }: { user: any }) {
   const queryClient = useQueryClient();
@@ -75,6 +76,47 @@ export function SettingsView({ user }: { user: any }) {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  // Fetch backups
+  const { data: backups, refetch: refetchBackups } = useQuery({
+    queryKey: ["backups"],
+    queryFn: async () => {
+      const res = await fetch("/api/system/backup/list");
+      const data = await res.json();
+      return data.backups as any[];
+    },
+  });
+
+  // Create backup
+  const createBackupMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/system/backup/create", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Backup created successfully");
+      refetchBackups();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  // Delete backup
+  const deleteBackupMutation = useMutation({
+    mutationFn: async (filename: string) => {
+      const res = await fetch(`/api/system/backup/delete/${filename}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error);
+      }
+    },
+    onSuccess: () => {
+      toast.success("Backup deleted");
+      refetchBackups();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   return (
     <div className="space-y-5 max-w-3xl">
       <div>
@@ -126,6 +168,10 @@ export function SettingsView({ user }: { user: any }) {
           <div className="flex items-center gap-2 mb-4">
             <GitBranch className="h-4 w-4 text-emerald-300" />
             <h3 className="text-sm font-semibold text-white">App Updates</h3>
+            <Badge variant="outline" className="ml-auto border-cyan-500/40 text-cyan-300 text-[10px]">
+              v{APP_VERSION}
+              {checkUpdateMutation.data?.currentCommit && ` · ${checkUpdateMutation.data.currentCommit}`}
+            </Badge>
           </div>
           <div className="space-y-3">
             <p className="text-xs text-slate-400">
@@ -242,6 +288,77 @@ export function SettingsView({ user }: { user: any }) {
         </div>
       </Card>
 
+      {/* Database Backups */}
+      <Card className="border-slate-800/60 bg-slate-900/40">
+        <div className="p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Database className="h-4 w-4 text-cyan-300" />
+              <h3 className="text-sm font-semibold text-white">Database Backups</h3>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => createBackupMutation.mutate()}
+              disabled={createBackupMutation.isPending}
+              className="bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950"
+            >
+              {createBackupMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              ) : (
+                <Plus className="h-3.5 w-3.5 mr-1" />
+              )}
+              Create Backup
+            </Button>
+          </div>
+          <p className="text-xs text-slate-400 mb-3">
+            Daily automatic backups (7-day retention). You can also create manual backups and download them.
+          </p>
+          <ScrollArea className="max-h-60">
+            {!backups || backups.length === 0 ? (
+              <div className="text-center py-4">
+                <Database className="h-6 w-6 text-slate-700 mx-auto mb-2" />
+                <p className="text-xs text-slate-500">No backups yet</p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {backups.map((backup: any) => (
+                  <div
+                    key={backup.filename}
+                    className="flex items-center gap-3 p-2.5 rounded-lg bg-slate-950/40 border border-slate-800/60"
+                  >
+                    <Database className="h-4 w-4 text-cyan-300 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-mono text-slate-200 truncate">{backup.filename}</p>
+                      <p className="text-[10px] text-slate-500">
+                        {(backup.size / 1024).toFixed(1)} KB · {new Date(backup.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                    <a
+                      href={`/api/system/backup/download/${backup.filename}`}
+                      className="text-slate-400 hover:text-cyan-300 p-1"
+                      title="Download"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </a>
+                    <button
+                      onClick={() => {
+                        if (confirm(`Delete backup ${backup.filename}?`)) {
+                          deleteBackupMutation.mutate(backup.filename);
+                        }
+                      }}
+                      className="text-slate-400 hover:text-rose-300 p-1"
+                      title="Delete"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </div>
+      </Card>
+
       {/* About */}
       <Card className="border-slate-800/60 bg-slate-900/40">
         <div className="p-5">
@@ -254,7 +371,14 @@ export function SettingsView({ user }: { user: any }) {
           </p>
           <div className="mt-3 flex items-center gap-2 text-xs">
             <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="text-slate-400">Version 1.1.0 — with auto scheduler</span>
+            <span className="text-slate-400">
+              Version {APP_VERSION}
+              {checkUpdateMutation.data?.currentCommit && (
+                <span className="text-slate-500 ml-1">
+                  (commit {checkUpdateMutation.data.currentCommit})
+                </span>
+              )}
+            </span>
           </div>
         </div>
       </Card>

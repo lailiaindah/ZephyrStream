@@ -8,8 +8,9 @@
 
 import { db } from "@/lib/db";
 import { startFFmpegStream, isProcessRunning } from "@/lib/ffmpeg";
-import { createBroadcast, uploadThumbnail, pickTitleAndThumbnail, refreshAccessToken } from "@/lib/youtube";
+import { createOrUpdateBroadcast, uploadThumbnail, pickTitleAndThumbnail, refreshAccessToken } from "@/lib/youtube";
 import { runCleanupIfNeeded } from "@/lib/cleanup";
+import { runBackupIfNeeded } from "@/lib/backup";
 
 const CHECK_INTERVAL_MS = 30 * 1000; // 30 seconds
 let schedulerInterval: NodeJS.Timeout | null = null;
@@ -29,6 +30,8 @@ async function schedulerTick() {
     await refreshExpiringTokens();
     // Cleanup runs at most once per hour (throttled internally)
     await runCleanupIfNeeded();
+    // Backup runs at most once per day (throttled internally)
+    await runBackupIfNeeded();
   } catch (err) {
     console.error("[Scheduler] Tick error:", err);
   } finally {
@@ -93,26 +96,84 @@ async function autoStopExpiredStreams() {
   }
 }
 
-// 3. Cleanup "ghost" live streams — status is live but FFmpeg process is dead
+// 3. Cleanup "ghost" live streams — status is live but FFmpeg process is dead.
+// Includes AUTO-RESTART logic: if the stream hasn't exceeded max retries,
+// restart FFmpeg automatically with exponential backoff.
 async function cleanupGhostStreams() {
   const live = await db.stream.findMany({
     where: { status: "live", pid: { not: null } },
+    include: { channel: true },
   });
 
   for (const stream of live) {
     if (stream.pid && !isProcessRunning(stream.pid)) {
       console.log(`[Scheduler] Ghost stream detected: ${stream.id} (PID ${stream.pid} dead)`);
 
-      // Mark as ended (or error if it didn't run long enough)
+      // Check if we should auto-restart (max 3 retries)
+      const retryCount = stream.retryCount || 0;
+      const MAX_RETRIES = 3;
+
+      if (retryCount < MAX_RETRIES) {
+        // Auto-restart with exponential backoff
+        const backoffSec = Math.min(5 * Math.pow(2, retryCount), 60); // 5s, 10s, 20s, max 60s
+        console.log(
+          `[Scheduler] Auto-restart attempt ${retryCount + 1}/${MAX_RETRIES} ` +
+          `for stream ${stream.id} in ${backoffSec}s`
+        );
+
+        await db.stream.update({
+          where: { id: stream.id },
+          data: {
+            pid: null,
+            retryCount: retryCount + 1,
+            lastError: `FFmpeg crashed — auto-retry ${retryCount + 1}/${MAX_RETRIES} in ${backoffSec}s`,
+          },
+        });
+
+        await db.activityLog.create({
+          data: {
+            userId: stream.userId,
+            level: "warn",
+            category: "stream",
+            message: `Auto-restart ${retryCount + 1}/${MAX_RETRIES}: ${stream.name}`,
+            details: `FFmpeg process died. Retrying in ${backoffSec}s.`,
+          },
+        }).catch(() => {});
+
+        // Schedule the restart after backoff
+        setTimeout(async () => {
+          try {
+            await retryStreamStart(stream, retryCount + 1);
+          } catch (err: any) {
+            console.error(`[Scheduler] Auto-restart failed for ${stream.id}:`, err.message);
+          }
+        }, backoffSec * 1000);
+
+        continue; // Skip the "mark as ended" logic below
+      }
+
+      // Max retries exceeded — mark as ended
+      console.log(`[Scheduler] Max retries (${MAX_RETRIES}) exceeded for stream ${stream.id}, marking as ended`);
+
       await db.stream.update({
         where: { id: stream.id },
         data: {
           status: "ended",
           endedAt: new Date(),
           pid: null,
-          lastError: "FFmpeg process died unexpectedly",
+          lastError: `FFmpeg process died after ${MAX_RETRIES} retry attempts`,
         },
       });
+
+      await db.activityLog.create({
+        data: {
+          userId: stream.userId,
+          level: "error",
+          category: "stream",
+          message: `Stream failed after ${MAX_RETRIES} retries: ${stream.name}`,
+          details: "FFmpeg crashed repeatedly. Auto-create next-day schedule if enabled.",
+        },
+      }).catch(() => {});
 
       // If autoCreateSchedule is on, create the next-day schedule
       if (stream.autoCreateSchedule) {
@@ -120,6 +181,84 @@ async function cleanupGhostStreams() {
       }
     }
   }
+}
+
+// Retry starting a stream after FFmpeg crash
+async function retryStreamStart(stream: any, retryCount: number) {
+  // Re-fetch to check if stream was manually stopped while we were waiting
+  const fresh = await db.stream.findUnique({ where: { id: stream.id } });
+  if (!fresh || fresh.status === "ended" || fresh.status === "error") {
+    console.log(`[Scheduler] Stream ${stream.id} was stopped during backoff, aborting retry`);
+    return;
+  }
+
+  // Resolve video files
+  let videoFiles: string[] = [];
+  if (fresh.sourceType === "local" && fresh.sourcePath) {
+    const fs = await import("fs/promises");
+    const path = await import("path");
+    const entries = await fs.readdir(fresh.sourcePath);
+    const VIDEO_EXTS = [".mp4", ".mov", ".mkv", ".avi", ".webm", ".ts", ".flv"];
+    videoFiles = entries
+      .filter((f) => VIDEO_EXTS.some((ext) => f.toLowerCase().endsWith(ext)))
+      .map((f) => path.join(fresh.sourcePath!, f));
+  } else if (fresh.sourceFileIds) {
+    const fileIds: string[] = JSON.parse(fresh.sourceFileIds);
+    const files = await db.uploadedFile.findMany({ where: { id: { in: fileIds } } });
+    videoFiles = files.filter((f) => f.storagePath).map((f) => f.storagePath!);
+  }
+
+  if (videoFiles.length === 0) {
+    throw new Error("No video files found for retry");
+  }
+
+  // Shuffle if enabled
+  if (fresh.shuffle && videoFiles.length > 1) {
+    for (let i = videoFiles.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [videoFiles[i], videoFiles[j]] = [videoFiles[j], videoFiles[i]];
+    }
+  }
+
+  const minSec = fresh.minHours * 3600;
+  const maxSec = fresh.maxHours * 3600;
+  const randomDurationSec = Math.round(minSec + Math.random() * (maxSec - minSec));
+
+  const { pid, logFile } = await startFFmpegStream({
+    streamKey: fresh.streamKey,
+    rtmpUrl: fresh.rtmpUrl,
+    videoFiles,
+    encoder: fresh.encoder,
+    copyMode: fresh.copyMode,
+    videoBitrate: fresh.videoBitrate,
+    audioBitrate: fresh.audioBitrate,
+    resolution: fresh.resolution,
+    fps: fresh.fps,
+    preset: fresh.preset,
+    durationSeconds: randomDurationSec,
+    logFile: undefined,
+  });
+
+  await db.stream.update({
+    where: { id: fresh.id },
+    data: {
+      pid,
+      logFile,
+      lastError: null,
+    },
+  });
+
+  await db.activityLog.create({
+    data: {
+      userId: fresh.userId,
+      level: "success",
+      category: "stream",
+      message: `Auto-restart succeeded: ${fresh.name} (attempt ${retryCount})`,
+      details: `New PID: ${pid}`,
+    },
+  }).catch(() => {});
+
+  console.log(`[Scheduler] Auto-restart succeeded for stream ${fresh.id}, new PID: ${pid}`);
 }
 
 // 4. Proactively refresh access tokens that will expire soon.
@@ -248,8 +387,9 @@ async function startStreamInternal(stream: any) {
         console.log(`[Scheduler] No pre-picked title, using stream.name: "${broadcastTitle}"`);
       }
 
-      const { broadcastId, streamId: ytStreamId } = await createBroadcast(
+      const { broadcastId, streamId: ytStreamId, created } = await createOrUpdateBroadcast(
         stream.channelId,
+        stream.broadcastId, // pass existing broadcastId for update
         {
           title: broadcastTitle,
           description: stream.description || "",
@@ -286,11 +426,13 @@ async function startStreamInternal(stream: any) {
         where: { id: stream.id },
         data: {
           broadcastId,
-          streamId: ytStreamId,
-          broadcastStatus: "created",
+          // Only update streamId if a new broadcast was created
+          ...(created ? { streamId: ytStreamId } : {}),
+          broadcastStatus: created ? "created" : "updated",
           privacyStatus: replayPrivacy,
         },
       });
+      console.log(`[Scheduler] Broadcast ${created ? "created" : "updated"}: ${broadcastId}`);
     } catch (err: any) {
       console.warn("[Scheduler] Failed to create broadcast:", err.message);
     }
@@ -325,6 +467,7 @@ async function startStreamInternal(stream: any) {
       startedAt: new Date(),
       endedAt: null,
       lastError: null,
+      retryCount: 0, // Reset retry count on successful start
     },
   });
 
@@ -342,8 +485,6 @@ async function startStreamInternal(stream: any) {
 // Internal: stop a stream (FFmpeg + YouTube transition)
 async function stopStreamInternal(stream: any) {
   // === GUARD: prevent double-stop race condition ===
-  // Re-fetch to check status. If already ended/error, skip (another tick
-  // may have already stopped it, or the ghost cleanup ran first).
   const fresh = await db.stream.findUnique({ where: { id: stream.id } });
   if (!fresh || fresh.status === "ended" || fresh.status === "error") {
     console.log(`[Scheduler] Stream ${stream.id} already ${fresh?.status || "missing"}, skip stop`);
@@ -353,18 +494,36 @@ async function stopStreamInternal(stream: any) {
   const { stopFFmpegStream } = await import("@/lib/ffmpeg");
   const { transitionBroadcast } = await import("@/lib/youtube");
 
+  // 1. Stop FFmpeg first (stop pushing video to YouTube)
   if (stream.pid) {
     await stopFFmpegStream(stream.pid);
   }
 
+  // 2. Transition YouTube broadcast to "complete" WITH RETRY
+  // YouTube needs time to process the transition. The retry logic in
+  // transitionBroadcast() will wait and retry up to 5 times (5s, 10s, 20s, 40s, 80s).
+  // This is critical because if the broadcast stays "live" in YouTube,
+  // the next-day schedule's createOrUpdateBroadcast will fail.
   if (stream.channelId && stream.broadcastId) {
     try {
       await transitionBroadcast(stream.channelId, stream.broadcastId, "complete");
+      console.log(`[Scheduler] YouTube broadcast ${stream.broadcastId} completed successfully`);
     } catch (err: any) {
-      console.warn("[Scheduler] Failed to transition broadcast:", err.message);
+      console.warn(`[Scheduler] YouTube broadcast transition failed after retries: ${err.message}`);
+      // Log to activity so user knows YouTube may still show "live"
+      await db.activityLog.create({
+        data: {
+          userId: stream.userId,
+          level: "warn",
+          category: "stream",
+          message: `YouTube broadcast may still be processing: ${stream.name}`,
+          details: `Transition to "complete" failed: ${err.message}. YouTube Studio may need manual check.`,
+        },
+      }).catch(() => {});
     }
   }
 
+  // 3. Mark stream as ended in database
   await db.stream.update({
     where: { id: stream.id },
     data: {
@@ -383,7 +542,8 @@ async function stopStreamInternal(stream: any) {
     },
   });
 
-  // If autoCreateSchedule is on, create the next-day schedule
+  // 4. Create next-day schedule (even if YouTube transition failed —
+  // the stream key is the same, so FFmpeg will push to YouTube regardless)
   if (stream.autoCreateSchedule) {
     await createNextDaySchedule(stream);
   }
@@ -503,7 +663,10 @@ export async function createNextDaySchedule(stream: any) {
   }
 }
 
-// Start the scheduler (call once on server boot)
+// Start the scheduler using node-cron for persistence.
+// node-cron survives server restarts better than setInterval because
+// it re-syncs to the clock (not relative time), and the schedule
+// definition is idempotent (safe to call multiple times).
 import cron from "node-cron";
 
 let cronJob: cron.ScheduledTask | null = null;
@@ -514,23 +677,19 @@ export function startScheduler() {
 
   console.log("[Scheduler] Starting persistent scheduler (node-cron, every 30s)");
 
-  // === AUTO-RECOVERY ON SERVER RESTART ===
-  // Clean up stale states from FFmpeg processes that were killed by restart
-  recoverFromServerRestart().catch((err) =>
-    console.error("[Scheduler] Auto-recovery error:", err)
-  );
-
-  // node-cron: re-syncs to wall clock, more reliable than setInterval
+  // Use node-cron for persistent scheduling (survives event loop delays)
+  // Run every 30 seconds: */30 * * * * *
   cronJob = cron.schedule("*/30 * * * * *", () => {
     schedulerTick().catch((err) =>
       console.error("[Scheduler] Cron tick error:", err)
     );
   });
 
-  // Run first tick immediately
+  // Also run once immediately on start
   schedulerTick().catch(console.error);
 
-  // Fallback interval
+  // And run once every 30s via setInterval as a fallback (in case
+  // node-cron has drift issues in some environments)
   if (!immediateInterval) {
     immediateInterval = setInterval(() => {
       schedulerTick().catch(console.error);
@@ -538,84 +697,15 @@ export function startScheduler() {
   }
 }
 
-// Auto-recovery: clean up stale states after server restart
-async function recoverFromServerRestart() {
-  console.log("[Scheduler] Running auto-recovery (server restart cleanup)...");
-  let recovered = 0;
-
-  // 1. Fix "ghost live" streams — status is "live" but PID is dead
-  const liveStreams = await db.stream.findMany({
-    where: { status: "live" },
-    include: { channel: true },
-  });
-
-  for (const stream of liveStreams) {
-    const isDead = !stream.pid || !isProcessRunning(stream.pid);
-
-    if (isDead) {
-      console.log(`[Recovery] Stream ${stream.id} was live but PID ${stream.pid} is dead`);
-      const minRunMs = 60 * 1000;
-      const ranLongEnough = stream.startedAt &&
-        (Date.now() - stream.startedAt.getTime()) > minRunMs;
-
-      await db.stream.update({
-        where: { id: stream.id },
-        data: {
-          status: ranLongEnough ? "ended" : "error",
-          endedAt: new Date(),
-          pid: null,
-          lastError: ranLongEnough ? null : "Server restarted while stream was live",
-          retryCount: 0,
-        },
-      });
-
-      await db.activityLog.create({
-        data: {
-          userId: stream.userId,
-          level: ranLongEnough ? "info" : "warn",
-          category: "stream",
-          message: `Auto-recovery: "${stream.name}" was live during server restart`,
-          details: ranLongEnough ? "Marked as ended." : "Marked as error.",
-        },
-      }).catch(() => {});
-
-      if (stream.autoCreateSchedule) {
-        await createNextDaySchedule(stream);
-      }
-      recovered++;
-    }
-  }
-
-  // 2. Fix "preparing" streams — stuck in preparing
-  const preparing = await db.stream.findMany({ where: { status: "preparing" } });
-  for (const stream of preparing) {
-    await db.stream.update({
-      where: { id: stream.id },
-      data: { status: "scheduled", pid: null, lastError: "Stuck in preparing after restart" },
-    });
-    recovered++;
-  }
-
-  // 3. Fix "stopping" streams — stuck in stopping
-  const stopping = await db.stream.findMany({ where: { status: "stopping" } });
-  for (const stream of stopping) {
-    await db.stream.update({
-      where: { id: stream.id },
-      data: { status: "ended", endedAt: new Date(), pid: null },
-    });
-    recovered++;
-  }
-
-  if (recovered > 0) {
-    console.log(`[Scheduler] Auto-recovery: ${recovered} stream(s) recovered`);
-  } else {
-    console.log("[Scheduler] Auto-recovery: no stale streams found");
-  }
-}
-
 // Stop the scheduler
 export function stopScheduler() {
-  if (cronJob) { cronJob.stop(); cronJob = null; }
-  if (immediateInterval) { clearInterval(immediateInterval); immediateInterval = null; }
+  if (cronJob) {
+    cronJob.stop();
+    cronJob = null;
+  }
+  if (immediateInterval) {
+    clearInterval(immediateInterval);
+    immediateInterval = null;
+  }
   console.log("[Scheduler] Stopped");
 }

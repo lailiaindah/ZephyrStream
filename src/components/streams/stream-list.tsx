@@ -12,6 +12,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Radio,
@@ -38,6 +40,7 @@ export function StreamList() {
   const [editing, setEditing] = useState<any>(null);
   const [logStreamId, setLogStreamId] = useState<string | null>(null);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
+  const [stopDialogStream, setStopDialogStream] = useState<any>(null);
 
   // Fetch channels for the filter
   const { data: channelsData } = useQuery({
@@ -167,16 +170,25 @@ export function StreamList() {
   });
 
   const stopMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/streams/${id}/stop`, { method: "POST" });
+    mutationFn: async ({ id, skipReschedule }: { id: string; skipReschedule?: boolean }) => {
+      const res = await fetch(`/api/streams/${id}/stop`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skipReschedule: skipReschedule || false }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       return data;
     },
-    onSuccess: () => {
-      toast.success("Stream stopped");
+    onSuccess: (data, variables) => {
+      toast.success(
+        variables.skipReschedule
+          ? "Stream stopped (no reschedule)"
+          : "Stream stopped"
+      );
       queryClient.invalidateQueries({ queryKey: ["streams"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      setStopDialogStream(null);
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -397,11 +409,11 @@ export function StreamList() {
                   ) : (
                     <Button
                       size="sm"
-                      onClick={() => stopMutation.mutate(stream.id)}
+                      onClick={() => setStopDialogStream(stream)}
                       disabled={stopMutation.isPending}
                       variant="destructive"
                     >
-                      {stopMutation.isPending && stopMutation.variables === stream.id ? (
+                      {stopMutation.isPending && stopMutation.variables?.id === stream.id ? (
                         <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
                       ) : (
                         <Square className="h-3.5 w-3.5 mr-1" />
@@ -472,6 +484,82 @@ export function StreamList() {
         isLoading={createMutation.isPending || updateMutation.isPending}
         lockedChannelId={selectedChannelId && selectedChannelId !== "unassigned" ? selectedChannelId : undefined}
       />
+
+      {/* Stop dialog with reschedule options */}
+      <Dialog open={!!stopDialogStream} onOpenChange={(o) => !o && setStopDialogStream(null)}>
+        <DialogContent className="bg-slate-950 border-slate-800 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Square className="h-5 w-5 text-rose-400" />
+              Stop Stream
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Stop "{stopDialogStream?.name}"?
+              {stopDialogStream?.autoCreateSchedule
+                ? " Choose whether to create a next-day schedule."
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          {stopDialogStream?.autoCreateSchedule ? (
+            <div className="space-y-3 pt-2">
+              <Button
+                onClick={() => stopMutation.mutate({ id: stopDialogStream.id, skipReschedule: false })}
+                disabled={stopMutation.isPending}
+                className="w-full bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-400 hover:to-orange-400 text-white"
+              >
+                {stopMutation.isPending && !stopMutation.variables?.skipReschedule ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Repeat className="h-4 w-4 mr-2" />
+                )}
+                Stop &amp; Reschedule (tomorrow)
+              </Button>
+              <Button
+                onClick={() => stopMutation.mutate({ id: stopDialogStream.id, skipReschedule: true })}
+                disabled={stopMutation.isPending}
+                variant="outline"
+                className="w-full border-slate-700 text-slate-300 hover:bg-slate-800"
+              >
+                {stopMutation.isPending && stopMutation.variables?.skipReschedule ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Square className="h-4 w-4 mr-2" />
+                )}
+                Stop Only (No Reschedule)
+              </Button>
+              <p className="text-[11px] text-slate-500 text-center pt-1">
+                &quot;Stop &amp; Reschedule&quot; creates a new stream for tomorrow at the same time.
+                &quot;Stop Only&quot; just stops this stream.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3 pt-2">
+              <Button
+                onClick={() => stopMutation.mutate({ id: stopDialogStream.id, skipReschedule: false })}
+                disabled={stopMutation.isPending}
+                className="w-full bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-400 hover:to-orange-400 text-white"
+              >
+                {stopMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Square className="h-4 w-4 mr-2" />
+                )}
+                Stop Stream
+              </Button>
+              <p className="text-[11px] text-slate-500 text-center">
+                Auto-create schedule is off — no next-day schedule will be created.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setStopDialogStream(null)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <LogViewerDialog streamId={logStreamId} onClose={() => setLogStreamId(null)} />
     </div>
