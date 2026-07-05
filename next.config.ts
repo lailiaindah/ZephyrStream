@@ -6,12 +6,20 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
-  // Skip prerendering for pages that use browser-only APIs (socket.io, etc.)
-  // This fixes the "null is not an object (evaluating 'R.H.useContext')" error
-  // during build when trying to prerender the global-error page.
   experimental: {
-    // Allow pages to be dynamic by default
     staticGenerationRetryCount: 1,
+  },
+  // Allow large file uploads (up to 10GB per request)
+  // This fixes "Server acted in an unexpected way" error when uploading videos
+  bodyParser: {
+    sizeLimit: "10gb",
+  },
+  // Also set API response size limit
+  api: {
+    bodyParser: {
+      sizeLimit: "10gb",
+    },
+    responseLimit: false,
   },
 };
 
