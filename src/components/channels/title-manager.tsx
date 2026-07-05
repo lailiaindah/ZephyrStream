@@ -140,21 +140,21 @@ export function TitleManager({ channelId, channelName }: TitleManagerProps) {
   });
 
   return (
-    <Card className="border-slate-800/60 bg-slate-900/40">
-      <div className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-cyan-500/10 border border-cyan-500/30">
+    <Card className="border-slate-800/60 bg-slate-900/40 overflow-hidden">
+      <div className="p-5 flex flex-col h-full">
+        <div className="flex items-center justify-between mb-4 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-cyan-500/10 border border-cyan-500/30 shrink-0">
               <Type className="h-4 w-4 text-cyan-300" />
             </div>
-            <div>
-              <h3 className="text-sm font-semibold text-white">Stream Titles</h3>
-              <p className="text-[11px] text-slate-500">
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-white truncate">Stream Titles</h3>
+              <p className="text-[11px] text-slate-500 truncate">
                 {titles?.length || 0} titles for {channelName}
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 shrink-0">
             <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}
               className="border-slate-700 text-slate-300 hover:bg-slate-800">
               <ListChecks className="h-3.5 w-3.5 mr-1" /> Bulk
@@ -166,7 +166,7 @@ export function TitleManager({ channelId, channelName }: TitleManagerProps) {
           </div>
         </div>
 
-        <ScrollArea className="max-h-[300px] rounded-md">
+        <ScrollArea className="max-h-[300px] rounded-md border border-slate-800/40">
           {isLoading ? (
             <div className="text-center py-6">
               <Loader2 className="h-5 w-5 text-cyan-300 mx-auto animate-spin" />
@@ -178,16 +178,16 @@ export function TitleManager({ channelId, channelName }: TitleManagerProps) {
               <p className="text-[10px] text-slate-600">Add titles to rotate through for anti-spam variation</p>
             </div>
           ) : (
-            <div className="space-y-1.5 pr-2">
+            <div className="space-y-1.5 p-1">
               {titles.map((t, idx) => (
                 <div key={t.id}
-                  className={cn("flex items-center gap-2 p-2.5 rounded-lg border transition-colors",
+                  className={cn("flex items-center gap-2 p-2.5 rounded-lg border transition-colors min-w-0",
                     t.enabled ? "bg-slate-950/40 border-slate-800/60" : "bg-slate-950/20 border-slate-800/40 opacity-60")}>
-                  <span className="text-[10px] font-mono text-slate-500 w-6 text-center">{idx + 1}</span>
-                  <span className="flex-1 text-sm text-slate-200 truncate">
+                  <span className="text-[10px] font-mono text-slate-500 w-6 text-center shrink-0">{idx + 1}</span>
+                  <span className="flex-1 text-sm text-slate-200 truncate min-w-0">
                     {t.emoji && <span className="mr-1">{t.emoji}</span>}{t.title}
                   </span>
-                  <Switch checked={t.enabled} onCheckedChange={(v) => toggleMutation.mutate({ id: t.id, enabled: v })} className="scale-75" />
+                  <Switch checked={t.enabled} onCheckedChange={(v) => toggleMutation.mutate({ id: t.id, enabled: v })} className="scale-75 shrink-0" />
                   <Button size="icon" variant="ghost" onClick={() => deleteMutation.mutate(t.id)} className="h-7 w-7 text-slate-500 hover:text-rose-300 shrink-0">
                     <Trash2 className="h-3 w-3" />
                   </Button>
@@ -198,7 +198,7 @@ export function TitleManager({ channelId, channelName }: TitleManagerProps) {
         </ScrollArea>
 
         {titles && titles.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-slate-800/60">
+          <div className="mt-3 pt-3 border-t border-slate-800/60 shrink-0">
             <Button size="sm" variant="ghost" onClick={() => { if (confirm(`Delete all ${titles.length} titles?`)) deleteAllMutation.mutate(); }}
               disabled={deleteAllMutation.isPending} className="w-full text-rose-400 hover:bg-rose-500/10 hover:text-rose-300">
               {deleteAllMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}

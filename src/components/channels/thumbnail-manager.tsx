@@ -90,27 +90,27 @@ export function ThumbnailManager({ channelId, channelName }: ThumbnailManagerPro
   };
 
   return (
-    <Card className="border-slate-800/60 bg-slate-900/40">
-      <div className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+    <Card className="border-slate-800/60 bg-slate-900/40 overflow-hidden">
+      <div className="p-5 flex flex-col h-full">
+        <div className="flex items-center justify-between mb-4 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 shrink-0">
               <ImageIcon className="h-4 w-4 text-emerald-300" />
             </div>
-            <div>
-              <h3 className="text-sm font-semibold text-white">Thumbnails</h3>
-              <p className="text-[11px] text-slate-500">{thumbnails?.length || 0} images for {channelName}</p>
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-white truncate">Thumbnails</h3>
+              <p className="text-[11px] text-slate-500 truncate">{thumbnails?.length || 0} images for {channelName}</p>
             </div>
           </div>
           <Button size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploadMutation.isPending}
-            className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950">
+            className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 shrink-0">
             {uploadMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1" />}
             Upload
           </Button>
           <input ref={fileInputRef} type="file" multiple accept="image/*" onChange={handleFileChange} className="hidden" />
         </div>
 
-        <ScrollArea className="max-h-[300px] rounded-md">
+        <ScrollArea className="max-h-[300px] rounded-md border border-slate-800/40">
           {isLoading ? (
             <div className="text-center py-6">
               <Loader2 className="h-5 w-5 text-emerald-300 mx-auto animate-spin" />
@@ -122,13 +122,13 @@ export function ThumbnailManager({ channelId, channelName }: ThumbnailManagerPro
               <p className="text-[10px] text-slate-600">Upload images (JPG, PNG, WebP) — YouTube recommends 1280×720</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pr-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-1">
               {thumbnails.map((thumb) => (
                 <div key={thumb.id} className="relative group rounded-lg overflow-hidden border border-slate-800/60 bg-slate-950/60">
-                  <div className="aspect-video bg-slate-900">
+                  <div className="aspect-video bg-slate-900 overflow-hidden">
                     <img src={`/api/thumbnails/${thumb.id}`} alt={thumb.originalName} className="w-full h-full object-cover" loading="lazy" />
                   </div>
-                  <div className="p-2">
+                  <div className="p-2 overflow-hidden">
                     <p className="text-[10px] text-slate-300 truncate">{thumb.originalName}</p>
                     <p className="text-[9px] text-slate-500">{thumb.size != null ? `${(thumb.size / 1024).toFixed(0)} KB` : "—"}</p>
                   </div>
@@ -143,7 +143,7 @@ export function ThumbnailManager({ channelId, channelName }: ThumbnailManagerPro
         </ScrollArea>
 
         {thumbnails && thumbnails.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-slate-800/60">
+          <div className="mt-3 pt-3 border-t border-slate-800/60 shrink-0">
             <Button size="sm" variant="ghost" onClick={() => { if (confirm(`Delete all ${thumbnails.length} thumbnails?`)) deleteAllMutation.mutate(); }}
               disabled={deleteAllMutation.isPending} className="w-full text-rose-400 hover:bg-rose-500/10 hover:text-rose-300">
               {deleteAllMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Trash2 className="h-3.5 w-3.5 mr-1" />}
