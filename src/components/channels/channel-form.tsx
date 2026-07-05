@@ -120,17 +120,35 @@ function ChannelFormInner({
   };
 
   const handleAuthorize = () => {
-    if (!editingChannel && saveMutation.data?.channel) {
-      authUrlMutation.mutate(saveMutation.data.channel.id);
-    } else if (editingChannel) {
-      authUrlMutation.mutate(editingChannel.id);
-    }
-  };
-
-  const handleExchange = () => {
     const channelId = editingChannel?.id || saveMutation.data?.channel?.id;
-    if (!channelId || !authCode) return;
-    exchangeMutation.mutate({ channelId, code: authCode });
+    if (!channelId) return;
+
+    // Open auth URL in popup window
+    authUrlMutation.mutateAsync(channelId).then((data) => {
+      const popup = window.open(data.authUrl, "google-auth", "width=500,height=600");
+
+      // Listen for postMessage from popup (oauth-callback sends it)
+      const messageHandler = (event: MessageEvent) => {
+        if (event.data?.type === "oauth-success") {
+          window.removeEventListener("message", messageHandler);
+          toast.success("Channel connected to YouTube!");
+          queryClient.invalidateQueries({ queryKey: ["channels"] });
+          queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+          onOpenChange(false);
+          setName("");
+          setDescription("");
+          setClientId("");
+          setClientSecret("");
+          setShowAuthStep(false);
+          if (popup) popup.close();
+        } else if (event.data?.type === "oauth-error") {
+          window.removeEventListener("message", messageHandler);
+          toast.error(`OAuth error: ${event.data.error}`);
+          if (popup) popup.close();
+        }
+      };
+      window.addEventListener("message", messageHandler);
+    });
   };
 
   return (

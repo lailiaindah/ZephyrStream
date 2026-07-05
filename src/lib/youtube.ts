@@ -28,7 +28,7 @@ export function buildOAuthClient(channel: {
     channel.clientSecret,
     // Redirect URI configured in Google Cloud Console — for desktop/web apps
     // We use postmessage for token exchange flexibility
-    "urn:ietf:wg:oauth:2.0:oob"
+    "http://localhost:3000/api/channels/oauth-callback"
   );
 
   if (channel.refreshToken || channel.accessToken) {
@@ -113,7 +113,7 @@ export async function refreshAccessToken(channelId: string): Promise<string> {
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
     channel.clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({ refresh_token: channel.refreshToken });
 
@@ -168,7 +168,7 @@ export async function getChannelInfo(channelId: string): Promise<YouTubeChannelI
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
     channel.clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({ access_token: accessToken });
 
@@ -214,7 +214,7 @@ export async function createBroadcast(
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
     channel.clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({ access_token: accessToken });
 
@@ -294,7 +294,7 @@ export async function transitionBroadcast(
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
     channel.clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({ access_token: accessToken });
 
@@ -353,7 +353,7 @@ export async function updateBroadcast(
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
     channel.clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({ access_token: accessToken });
 
@@ -390,7 +390,7 @@ export async function deleteBroadcast(
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
     channel.clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({ access_token: accessToken });
 
@@ -453,7 +453,7 @@ export async function listBroadcasts(channelId: string) {
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
     channel.clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({ access_token: accessToken });
 
@@ -569,7 +569,7 @@ export async function uploadThumbnail(
     const oauth2Client = new google.auth.OAuth2(
       channel.clientId,
       channel.clientSecret,
-      "urn:ietf:wg:oauth:2.0:oob"
+      "http://localhost:3000/api/channels/oauth-callback"
     );
     oauth2Client.setCredentials({ access_token: accessToken });
 

@@ -1,5 +1,7 @@
 // GET /api/channels/oauth-callback — Handle Google OAuth redirect callback
-// Google redirects here after user authorizes. We exchange the code for tokens.
+// This endpoint receives the redirect from Google after user authorizes.
+// It works when the app is accessed from the same machine (localhost).
+// For remote VPS access, the frontend handles the code via popup window.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { exchangeCodeForTokens, getChannelInfo } from "@/lib/youtube";
@@ -10,21 +12,26 @@ export async function GET(req: NextRequest) {
   const state = searchParams.get("state"); // channel ID
   const error = searchParams.get("error");
 
-  // Build redirect URI (must match the one used in getAuthUrl)
-  const protocol = req.headers.get("x-forwarded-proto") || "http";
-  const host = req.headers.get("host") || req.headers.get("x-forwarded-host");
-  const redirectUri = `${protocol}://${host}/api/channels/oauth-callback`;
+  const redirectUri = "http://localhost:3000/api/channels/oauth-callback";
 
   // If Google returned an error
   if (error) {
-    return NextResponse.redirect(
-      new URL(`/?oauth_error=${encodeURIComponent(error)}`, req.url)
+    return new NextResponse(
+      `<html><body><script>
+        window.opener.postMessage({ type: 'oauth-error', error: '${encodeURIComponent(error)}' }, '*');
+        window.close();
+      </script></body></html>`,
+      { headers: { "Content-Type": "text/html" } }
     );
   }
 
   if (!code || !state) {
-    return NextResponse.redirect(
-      new URL(`/?oauth_error=missing_code_or_state`, req.url)
+    return new NextResponse(
+      `<html><body><script>
+        window.opener.postMessage({ type: 'oauth-error', error: 'missing_code_or_state' }, '*');
+        window.close();
+      </script></body></html>`,
+      { headers: { "Content-Type": "text/html" } }
     );
   }
 
@@ -34,8 +41,12 @@ export async function GET(req: NextRequest) {
     // Find the channel
     const channel = await db.channel.findUnique({ where: { id: channelId } });
     if (!channel) {
-      return NextResponse.redirect(
-        new URL(`/?oauth_error=channel_not_found`, req.url)
+      return new NextResponse(
+        `<html><body><script>
+          window.opener.postMessage({ type: 'oauth-error', error: 'channel_not_found' }, '*');
+          window.close();
+        </script></body></html>`,
+        { headers: { "Content-Type": "text/html" } }
       );
     }
 
@@ -85,14 +96,17 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Redirect back to the app with success
-    return NextResponse.redirect(
-      new URL(`/?oauth_success=${channelId}`, req.url)
+    // Return HTML that posts message to opener window and closes popup
+    return new NextResponse(
+      `<html><body><script>
+        window.opener.postMessage({ type: 'oauth-success', channelId: '${channelId}' }, '*');
+        window.close();
+      </script></body></html>`,
+      { headers: { "Content-Type": "text/html" } }
     );
   } catch (err: any) {
     console.error("OAuth callback error:", err.message);
 
-    // Mark channel as error
     try {
       await db.channel.update({
         where: { id: channelId },
@@ -100,8 +114,12 @@ export async function GET(req: NextRequest) {
       });
     } catch {}
 
-    return NextResponse.redirect(
-      new URL(`/?oauth_error=${encodeURIComponent(err.message)}`, req.url)
+    return new NextResponse(
+      `<html><body><script>
+        window.opener.postMessage({ type: 'oauth-error', error: '${encodeURIComponent(err.message)}' }, '*');
+        window.close();
+      </script></body></html>`,
+      { headers: { "Content-Type": "text/html" } }
     );
   }
 }

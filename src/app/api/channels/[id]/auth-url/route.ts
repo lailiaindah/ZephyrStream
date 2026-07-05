@@ -1,12 +1,12 @@
 // POST /api/channels/[id]/auth-url — Get the Google OAuth URL for this channel
-// Uses web redirect flow (NOT the deprecated OOB flow)
+// Uses http://localhost redirect (Google allows localhost without domain)
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { getAuthUrl } from "@/lib/youtube";
 
 export async function POST(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -21,17 +21,15 @@ export async function POST(
       return NextResponse.json({ error: "Channel not found" }, { status: 404 });
     }
 
-    // Build the redirect URI from the request origin.
-    // This works for both HTTP (http://IP:3000) and HTTPS (https://domain).
-    const origin = req.headers.get("origin") || req.headers.get("host");
-    const protocol = req.headers.get("x-forwarded-proto") || "http";
-    const host = req.headers.get("host") || req.headers.get("x-forwarded-host");
-    const redirectUri = `${protocol}://${host}/api/channels/oauth-callback`;
+    // Google allows http://localhost as redirect URI (no domain needed).
+    // The callback handler at /api/channels/oauth-callback will receive
+    // the code and exchange it for tokens.
+    const redirectUri = "http://localhost:3000/api/channels/oauth-callback";
 
     const authUrl = getAuthUrl(
       channel.clientId,
       channel.clientSecret,
-      channel.id, // state = channel ID so callback knows which channel
+      channel.id, // state = channel ID
       redirectUri
     );
 
