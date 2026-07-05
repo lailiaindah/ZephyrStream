@@ -1,8 +1,14 @@
-// POST /api/system/speed-test — Run an internet speed test
+// POST /api/system/speed-test — Run an internet speed test using Ookla CLI
+//
+// The Ookla CLI can take 15-30 seconds (download + upload phases). We
+// set maxDuration to 120s so the request doesn't time out on slow
+// connections. The frontend shows a spinner during this time.
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { runInternetSpeedTest } from "@/lib/system-stats";
 import { canAccessSystemEndpoints } from "@/lib/access-control";
+
+export const maxDuration = 120; // 2 minutes
 
 export async function POST() {
   try {

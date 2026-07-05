@@ -212,14 +212,104 @@ export async function getHistoricalStats(minutes: number = 60) {
   return metrics;
 }
 
-// Run an internet speed test (downloads a known file and measures time)
-export async function runInternetSpeedTest(): Promise<{
-  downloadSpeed: number; // Mbps
+// Run an internet speed test using the official Ookla Speedtest CLI.
+//
+// The Ookla CLI is more accurate than a single-file download because it:
+//   - Uses multiple parallel connections
+//   - Measures both download AND upload
+//   - Reports jitter, packet loss, and latency
+//   - Selects the nearest server automatically
+//   - Reports the server used and the ISP
+//
+// Installation (one-time, on the VPS):
+//   # Option A: official Ookla apt repo (Debian/Ubuntu)
+//   sudo apt-get install gnupg1 apt-transport-https
+//   sudo install -d -m 0755 /etc/apt/keyrings
+//   sudo gpg --no-default-keyring --keyring /etc/apt/keyrings/ookla_speedtest-cli-archive-keyring.gpg \
+//     --keyserver keyserver.ubuntu.com --recv-keys 379CE192D401AB61
+//   echo "deb [signed-by=/etc/apt/keyrings/ookla_speedtest-cli-archive-keyring.gpg] https://debian.speedtest.net/ookla-speedtest-cli $(lsb_release -cs) main" | \
+//     sudo tee /etc/apt/sources.list.d/ookla_speedtest-cli.list
+//   sudo apt-get update && sudo apt-get install speedtest
+//
+//   # Option B: download the standalone binary (no sudo)
+//   curl -sL https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-x86_64.tgz | tar xz -C /usr/local/bin speedtest
+//
+// The CLI is auto-detected from PATH, or you can override with the
+// SPEEDTEST_BIN env var. If not found, we fall back to the legacy
+// Cloudflare-based test so the UI still works.
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
+
+export interface OoklaSpeedTestResult {
+  // Download/upload speeds in Mbps (rounded to 2 decimals)
+  downloadSpeed: number;
+  uploadSpeed: number;
+  // Latency / jitter in milliseconds
   latencyMs: number;
-}> {
+  jitterMs: number;
+  packetLoss: number; // percentage (0-100)
+  // Server + ISP info so the user can verify the test ran against a real server
+  server: {
+    id: number;
+    name: string;
+    location: string;
+    country: string;
+    host: string;
+  };
+  isp: string;
+  externalIp: string;
+  internalIp: string;
+  // URL of the result page on speedtest.net (so user can verify/share)
+  resultUrl: string;
+  // Whether the Ookla CLI was used (false = fell back to legacy test)
+  usedOokla: boolean;
+  // Raw timestamps for diagnostics
+  timestamp: string;
+}
+
+// Find the Ookla speedtest binary. Returns null if not found.
+async function findSpeedtestBinary(): Promise<string | null> {
+  // 1. Explicit env var override (highest priority)
+  if (process.env.SPEEDTEST_BIN) {
+    try {
+      await execFileAsync(process.env.SPEEDTEST_BIN, ["--version"], { timeout: 5000 });
+      return process.env.SPEEDTEST_BIN;
+    } catch {
+      // fall through
+    }
+  }
+
+  // 2. Common install locations (in order of preference)
+  const candidates = [
+    "speedtest",                              // in PATH (apt install)
+    "/usr/local/bin/speedtest",               // manual install
+    "/usr/bin/speedtest",                     // apt install
+    "/home/z/bin/speedtest",                  // our dev env
+    "/opt/speedtest",                         // some installs
+  ];
+
+  for (const bin of candidates) {
+    try {
+      const { stdout } = await execFileAsync(bin, ["--version"], { timeout: 5000 });
+      // Verify it's the Ookla CLI (not the legacy python `speedtest-cli`)
+      if (stdout.includes("Speedtest by Ookla")) {
+        return bin;
+      }
+    } catch {
+      // not found or wrong binary
+    }
+  }
+
+  return null;
+}
+
+// Legacy fallback: download a 10MB file from Cloudflare and measure throughput.
+// Less accurate than Ookla (single connection, no upload test, no jitter).
+async function runLegacySpeedTest(): Promise<OoklaSpeedTestResult> {
   const startTime = Date.now();
   try {
-    // Use Cloudflare's speed test endpoint (small file)
     const response = await fetch("https://speed.cloudflare.com/__down?bytes=10000000", {
       cache: "no-store",
     });
@@ -230,9 +320,95 @@ export async function runInternetSpeedTest(): Promise<{
     const downloadSpeed = bits / elapsedSec / 1_000_000;
     return {
       downloadSpeed: Math.round(downloadSpeed * 100) / 100,
+      uploadSpeed: 0,
       latencyMs: Math.round(elapsedSec * 1000),
+      jitterMs: 0,
+      packetLoss: 0,
+      server: {
+        id: 0,
+        name: "Cloudflare",
+        location: "Anycast",
+        country: "",
+        host: "speed.cloudflare.com",
+      },
+      isp: "",
+      externalIp: "",
+      internalIp: "",
+      resultUrl: "",
+      usedOokla: false,
+      timestamp: new Date().toISOString(),
     };
   } catch (error) {
-    return { downloadSpeed: 0, latencyMs: 0 };
+    return {
+      downloadSpeed: 0,
+      uploadSpeed: 0,
+      latencyMs: 0,
+      jitterMs: 0,
+      packetLoss: 0,
+      server: { id: 0, name: "", location: "", country: "", host: "" },
+      isp: "",
+      externalIp: "",
+      internalIp: "",
+      resultUrl: "",
+      usedOokla: false,
+      timestamp: new Date().toISOString(),
+    };
+  }
+}
+
+// Run the Ookla Speedtest CLI and parse the JSON output.
+// The CLI can take 15-30 seconds to complete (download + upload phases).
+// We set a 120s timeout to be safe.
+export async function runInternetSpeedTest(): Promise<OoklaSpeedTestResult> {
+  const bin = await findSpeedtestBinary();
+  if (!bin) {
+    console.warn("[SpeedTest] Ookla speedtest CLI not found, falling back to legacy Cloudflare test. Install from https://www.speedtest.net/apps/cli");
+    return runLegacySpeedTest();
+  }
+
+  try {
+    // Run with JSON output, no progress bar, accept license + GDPR
+    // (the CLI requires accepting these on first run; we pass the flags
+    // to avoid the interactive prompt that would hang the request).
+    const { stdout } = await execFileAsync(
+      bin,
+      ["--format=json", "--progress=no", "--accept-license", "--accept-gdpr"],
+      { timeout: 120_000 }
+    );
+
+    const data = JSON.parse(stdout);
+
+    // Ookla reports bandwidth in bytes/second. Convert to Mbps (bits/second / 1e6).
+    // The CLI's JSON format uses "bandwidth" in B/s, "bytes" total transferred,
+    // and "elapsed" in milliseconds.
+    const downloadBps = (data.download?.bandwidth || 0) * 8;
+    const uploadBps = (data.upload?.bandwidth || 0) * 8;
+
+    return {
+      downloadSpeed: Math.round((downloadBps / 1_000_000) * 100) / 100,
+      uploadSpeed: Math.round((uploadBps / 1_000_000) * 100) / 100,
+      latencyMs: Math.round((data.ping?.latency || 0) * 100) / 100,
+      jitterMs: Math.round((data.ping?.jitter || 0) * 100) / 100,
+      packetLoss: Math.round((data.packetLoss || 0) * 10000) / 100, // 0-100%
+      server: {
+        id: data.server?.id || 0,
+        name: data.server?.name || "",
+        location: data.server?.location || "",
+        country: data.server?.country || "",
+        host: data.server?.host || "",
+      },
+      isp: data.isp || "",
+      externalIp: data.interface?.externalIp || "",
+      internalIp: data.interface?.internalIp || "",
+      resultUrl: data.result?.url || "",
+      usedOokla: true,
+      timestamp: data.timestamp || new Date().toISOString(),
+    };
+  } catch (err: any) {
+    console.error("[SpeedTest] Ookla CLI failed:", err.message);
+    // Fall back to legacy test so the UI doesn't break
+    const fallback = await runLegacySpeedTest();
+    fallback.server.name = `${fallback.server.name} (Ookla failed: ${err.message})`;
+    return fallback;
   }
 }
