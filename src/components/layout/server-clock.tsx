@@ -38,6 +38,9 @@ export function ServerClock() {
         serverEpochRef.current = new Date(iso).getTime();
         localPerfRef.current = performance.now();
 
+        // Set the timezone once per fetch (it doesn't change between ticks)
+        if (data.timezone) setTz(data.timezone);
+
         updateDisplay();
         setError(false);
       } catch {

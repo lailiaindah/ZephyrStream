@@ -369,7 +369,14 @@ async function startStreamInternal(stream: any) {
   }
 
   // Re-fetch the claimed stream for the latest data (title, thumbnail, etc.)
-  const fresh = await db.stream.findUnique({ where: { id: stream.id } });
+  // CRITICAL: include the channel relation — fresh.channel?.status is
+  // checked below to decide whether to create a YouTube broadcast.
+  // Without `include: { channel: true }`, fresh.channel is undefined and
+  // the broadcast creation block is silently skipped for every auto-start.
+  const fresh = await db.stream.findUnique({
+    where: { id: stream.id },
+    include: { channel: true },
+  });
   if (!fresh) {
     console.log(`[Scheduler] Stream ${stream.id} disappeared after claim, aborting`);
     return;
@@ -750,7 +757,6 @@ export async function createNextDaySchedule(stream: any) {
 import cron from "node-cron";
 
 let cronJob: cron.ScheduledTask | null = null;
-let immediateInterval: NodeJS.Timeout | null = null;
 
 export function startScheduler() {
   if (cronJob) return; // already running
@@ -780,10 +786,6 @@ export function stopScheduler() {
   if (cronJob) {
     cronJob.stop();
     cronJob = null;
-  }
-  if (immediateInterval) {
-    clearInterval(immediateInterval);
-    immediateInterval = null;
   }
   console.log("[Scheduler] Stopped");
 }
