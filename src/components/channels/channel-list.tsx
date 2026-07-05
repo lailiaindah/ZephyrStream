@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { StatusBadge } from "@/components/common/status-badge";
 import { ChannelForm } from "@/components/channels/channel-form";
 import { TitleManager } from "@/components/channels/title-manager";
@@ -20,7 +21,6 @@ import {
   FileVideo,
   Type,
   Image as ImageIcon,
-  Shuffle as ShuffleIcon,
 } from "lucide-react";
 
 export function ChannelList() {
@@ -286,14 +286,28 @@ function ChannelFileManager({
   const uploadMutation = useMutation({
     mutationFn: async (files: File[]) => {
       const formData = new FormData();
-      formData.append("channelId", channelId);
+      // Send channelId via query string — the upload route uses formidable
+      // for streaming multipart parsing (bypassing Next.js 16's built-in
+      // body parser that fails for large files). formidable only handles
+      // file fields; channelId travels in the URL.
       files.forEach((f) => formData.append("files", f));
-      const res = await fetch("/api/files/upload", {
+      const res = await fetch(`/api/files/upload?channelId=${encodeURIComponent(channelId)}`, {
         method: "POST",
         body: formData,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      // Guard against non-JSON responses (e.g. if the server returns an
+      // HTML error page) — never throw a confusing JSON parse error.
+      const text = await res.text();
+      let data: any;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(
+          `Upload failed (HTTP ${res.status}). The server response was not valid JSON. ` +
+          `Try a smaller file or check your network.`
+        );
+      }
+      if (!res.ok) throw new Error(data.error || `Upload failed (HTTP ${res.status})`);
       return data;
     },
     onSuccess: (data) => {
@@ -344,69 +358,34 @@ function ChannelFileManager({
     e.target.value = "";
   };
 
-  const shuffleFilesMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/files/shuffle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channelId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      return data;
-    },
-    onSuccess: (data) => {
-      toast.success(`Shuffled ${data.count} files — order randomized for next stream`);
-      queryClient.invalidateQueries({ queryKey: ["files", channelId] });
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
   return (
     <Card className="border-slate-800/60 bg-slate-900/40">
       <div className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-amber-500/10 border border-amber-500/30">
+        <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-amber-500/10 border border-amber-500/30 shrink-0">
               <FileVideo className="h-4 w-4 text-amber-300" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h3 className="text-sm font-semibold text-white">Video Files</h3>
               <p className="text-[11px] text-slate-500">
                 {files?.length || 0} files for {channelName}
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => shuffleFilesMutation.mutate()}
-              disabled={shuffleFilesMutation.isPending || !files?.length}
-              className="border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
-              title="Shuffle file playback order"
-            >
-              {shuffleFilesMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-              ) : (
-                <ShuffleIcon className="h-3.5 w-3.5 mr-1" />
-              )}
-              Shuffle
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadMutation.isPending}
-              className="bg-gradient-to-r from-amber-500 to-cyan-500 hover:from-amber-400 hover:to-cyan-400 text-slate-950"
-            >
-              {uploadMutation.isPending ? (
-                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-              ) : (
-                <Plus className="h-3.5 w-3.5 mr-1" />
-              )}
-              Upload
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadMutation.isPending}
+            className="bg-gradient-to-r from-amber-500 to-cyan-500 hover:from-amber-400 hover:to-cyan-400 text-slate-950 shrink-0"
+          >
+            {uploadMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+            ) : (
+              <Plus className="h-3.5 w-3.5 mr-1" />
+            )}
+            Upload
+          </Button>
           <input
             ref={fileInputRef}
             type="file"
@@ -415,6 +394,13 @@ function ChannelFileManager({
             onChange={handleFileChange}
             className="hidden"
           />
+        </div>
+
+        {/* Info banner explaining shuffle behavior */}
+        <div className="mb-3 p-2.5 rounded-md bg-cyan-500/5 border border-cyan-500/20 text-[11px] text-cyan-300">
+          <strong>Tip:</strong> Urutan video diacak saat stream dimulai jika opsi{" "}
+          <strong>“Shuffle Video Order”</strong> diaktifkan di dialog Create New Stream.
+          Tidak perlu shuffle manual di sini.
         </div>
 
         {isLoading ? (
@@ -426,38 +412,44 @@ function ChannelFileManager({
             <FileVideo className="h-8 w-8 text-slate-700 mx-auto mb-2" />
             <p className="text-xs text-slate-500 mb-1">No video files yet</p>
             <p className="text-[10px] text-slate-600">
-              Upload video files for this channel — they won't appear in other channels
+              Upload video files for this channel — they won&apos;t appear in other channels
             </p>
           </div>
         ) : (
-          <div className="space-y-1.5">
-            {files.map((file) => (
-              <div
-                key={file.id}
-                className="flex items-center gap-3 p-2.5 rounded-lg bg-slate-950/40 border border-slate-800/60 hover:border-slate-700"
-              >
-                <FileVideo className="h-4 w-4 text-amber-300 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-slate-200 truncate">{file.originalName}</p>
-                  <p className="text-[10px] text-slate-500">
-                    {file.size != null ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "—"} • {file.mimeType || "unknown"}
-                  </p>
-                </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => {
-                    if (confirm(`Delete "${file.originalName}"?`)) {
-                      deleteMutation.mutate(file.id);
-                    }
-                  }}
-                  className="h-7 w-7 text-slate-500 hover:text-rose-300"
+          // Wrap the file list in a ScrollArea so it never overflows the
+          // Card frame, even when there are many files. Each row is also
+          // constrained with min-w-0 + truncate so long filenames don&apos;t
+          // push the delete button off-screen.
+          <ScrollArea className="max-h-96 rounded-lg border border-slate-800/60 bg-slate-950/30">
+            <div className="divide-y divide-slate-800/60">
+              {files.map((file) => (
+                <div
+                  key={file.id}
+                  className="flex items-center gap-3 p-2.5 hover:bg-slate-800/40"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            ))}
-          </div>
+                  <FileVideo className="h-4 w-4 text-amber-300 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-slate-200 truncate">{file.originalName}</p>
+                    <p className="text-[10px] text-slate-500 truncate">
+                      {file.size != null ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "—"} • {file.mimeType || "unknown"}
+                    </p>
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => {
+                      if (confirm(`Delete "${file.originalName}"?`)) {
+                        deleteMutation.mutate(file.id);
+                      }
+                    }}
+                    className="h-7 w-7 text-slate-500 hover:text-rose-300 shrink-0"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
         )}
 
         {files && files.length > 0 && (

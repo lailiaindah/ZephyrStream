@@ -6,7 +6,22 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 // Hook for real-time updates via Socket.io
-// Connects to the real-time mini-service on port 3003
+//
+// Connection strategy (in order):
+//   1. Try the same-origin gateway path "/?XTransformPort=3003" — this works
+//      when a reverse proxy (e.g. Caddy) is in front and rewrites the request
+//      to port 3003. It is the cleanest approach because no CORS / mixed-
+//      content issues arise.
+//
+//   2. If the gateway doesn't connect within 3s, fall back to a DIRECT
+//      connection to the realtime service. The URL is built from
+//      window.location.hostname (NOT "localhost" — that would resolve to the
+//      user's own machine, not the VPS) on port 3003. The protocol inherits
+//      from the page (https → wss, http → ws) so we don't trip mixed-content
+//      blockers.
+//
+//   3. If both fail, the UI shows "Realtime Offline" but the rest of the app
+//      continues to work via normal HTTP polling (TanStack Query refetches).
 export function useRealtimeUpdates() {
   const queryClient = useQueryClient();
   const socketRef = useRef<Socket | null>(null);
@@ -14,11 +29,20 @@ export function useRealtimeUpdates() {
 
   useEffect(() => {
     let socket: Socket;
+    let fallbackTimer: ReturnType<typeof setTimeout>;
+    let disposed = false;
 
     try {
-      // Try gateway first (XTransformPort), fallback to direct connection
-      // The gateway approach works in production with Caddy, but in dev
-      // we may need to connect directly to the realtime service port.
+      // Build the direct-connect URL from the current page's hostname.
+      // We CANNOT use "localhost" because in the user's browser that
+      // resolves to their own machine — the realtime service runs on the
+      // VPS, not the user's machine. Using window.location.hostname ensures
+      // we point at the same host the web app is served from.
+      const proto = window.location.protocol; // http: or https:
+      const host = window.location.hostname;  // VPS IP or domain
+      const directUrl = `${proto}//${host}:3003`;
+
+      // Try gateway first (works when Caddy is in front)
       socket = io("/?XTransformPort=3003", {
         transports: ["websocket", "polling"],
         reconnection: true,
@@ -27,19 +51,20 @@ export function useRealtimeUpdates() {
         timeout: 5000,
       });
 
-      // If gateway doesn't work after 3s, try direct connection
-      const fallbackTimer = setTimeout(() => {
+      // If gateway doesn't work after 3s, try direct connection to port 3003
+      fallbackTimer = setTimeout(() => {
+        if (disposed) return;
         if (!socket.connected) {
-          console.log("[Realtime] Gateway connection failed, trying direct...");
+          console.log("[Realtime] Gateway connection failed, trying direct:", directUrl);
           socket.disconnect();
-          socket = io("http://localhost:3003", {
+          socket = io(directUrl, {
             transports: ["websocket", "polling"],
             reconnection: true,
             reconnectionDelay: 2000,
             reconnectionAttempts: 10,
+            timeout: 5000,
           });
           setupHandlers(socket);
-          // Update ref so subscribeToStreamLog uses the new socket
           socketRef.current = socket;
         }
       }, 3000);
@@ -53,6 +78,7 @@ export function useRealtimeUpdates() {
       });
 
       return () => {
+        disposed = true;
         clearTimeout(fallbackTimer);
         socket.disconnect();
         socketRef.current = null;
@@ -71,6 +97,13 @@ export function useRealtimeUpdates() {
       s.on("disconnect", () => {
         setConnected(false);
         console.log("[Realtime] Disconnected");
+      });
+
+      s.on("connect_error", (err: any) => {
+        // Log connection errors at debug level — these are expected when
+        // the realtime service is not running or the network blocks the
+        // port. We don't want to spam the console.
+        console.debug("[Realtime] Connect error:", err.message);
       });
 
       // Stream status changed
@@ -124,4 +157,3 @@ export function useRealtimeUpdates() {
 
   return { connected, subscribeToStreamLog, unsubscribeFromStreamLog };
 }
-

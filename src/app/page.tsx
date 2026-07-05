@@ -330,9 +330,9 @@ export default function Home() {
 
         <footer className="mt-auto border-t border-slate-800/60 px-6 py-3">
           <div className="flex items-center justify-between text-xs text-slate-500">
-            <span>ZephyrStream v1.5.3 — Multi-Channel Live Streaming</span>
+            <span>ZephyrStream v1.6.0 — Multi-Channel Live Streaming</span>
             <div className="flex items-center gap-4">
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1" title="Realtime updates via Socket.io (port 3003). If offline, dashboard still works via HTTP polling.">
                 {realtimeConnected ? (
                   <>
                     <Wifi className="h-3 w-3 text-emerald-400" />

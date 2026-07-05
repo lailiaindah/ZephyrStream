@@ -9,21 +9,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { User, Shield, Server, Cpu, Save, Loader2, CheckCircle2, Download, RefreshCw, GitBranch, AlertCircle, Database, Plus, Trash2 } from "lucide-react";
+import { User, Shield, Server, Cpu, Loader2, CheckCircle2, Download, RefreshCw, GitBranch, AlertCircle, Database, Plus, Trash2, Terminal } from "lucide-react";
 import { APP_VERSION } from "@/lib/constants";
 
 export function SettingsView({ user }: { user: any }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(user?.name || "");
-  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
 
   const { data: ffmpegInfo } = useQuery({
     queryKey: ["ffmpeg"],
@@ -42,7 +33,10 @@ export function SettingsView({ user }: { user: any }) {
     refetchInterval: 5000,
   });
 
-  // Check for updates
+  // Check for updates — read-only. The button only fetches the latest
+  // commit from GitHub and compares it with the local HEAD. It does NOT
+  // pull, install, build, or restart. The admin must SSH in and run those
+  // commands manually after seeing that an update is available.
   const checkUpdateMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/system/update?action=check", { method: "POST" });
@@ -54,31 +48,10 @@ export function SettingsView({ user }: { user: any }) {
       if (data.upToDate) {
         toast.success("You are running the latest version");
       } else {
-        toast.info(`${data.newCommits?.length || 0} new update(s) available`);
-        setUpdateDialogOpen(true);
+        toast.info(`${data.newCommits?.length || 0} new update(s) available — see details below`);
       }
     },
     onError: (err: Error) => toast.error(err.message),
-  });
-
-  // Pull updates
-  const pullUpdateMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/system/update?action=pull", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      return data;
-    },
-    onSuccess: (data) => {
-      toast.success(data.message, { duration: 8000 });
-      if (data.stepsCompleted) {
-        toast.info(`Steps: ${data.stepsCompleted.join(" → ")}`, { duration: 10000 });
-      }
-      setUpdateDialogOpen(false);
-      // Reload page after 3 seconds to load new version
-      setTimeout(() => window.location.reload(), 3000);
-    },
-    onError: (err: Error) => toast.error(err.message, { duration: 8000 }),
   });
 
   // Fetch backups
@@ -167,12 +140,12 @@ export function SettingsView({ user }: { user: any }) {
         </div>
       </Card>
 
-      {/* Update checker */}
+      {/* Update checker — read-only. Only checks for new commits. */}
       <Card className="border-slate-800/60 bg-slate-900/40">
         <div className="p-5">
           <div className="flex items-center gap-2 mb-4">
             <GitBranch className="h-4 w-4 text-emerald-300" />
-            <h3 className="text-sm font-semibold text-white">App Updates</h3>
+            <h3 className="text-sm font-semibold text-white">Cek Update</h3>
             <Badge variant="outline" className="ml-auto border-cyan-500/40 text-cyan-300 text-[10px]">
               v{APP_VERSION}
               {checkUpdateMutation.data?.currentCommit && ` · ${checkUpdateMutation.data.currentCommit}`}
@@ -180,8 +153,8 @@ export function SettingsView({ user }: { user: any }) {
           </div>
           <div className="space-y-3">
             <p className="text-xs text-slate-400">
-              Check for updates from the GitHub repository. If a new version is available,
-              you can pull it directly from here (works like <code className="text-cyan-300">git pull</code>).
+              Tombol ini hanya untuk <strong>mengecek</strong> apakah ada update terbaru di GitHub.
+              Jika ada update, Anda perlu SSH ke VPS dan menjalankan perintah update manual.
             </p>
             <div className="flex items-center gap-2">
               <Button
@@ -206,21 +179,41 @@ export function SettingsView({ user }: { user: any }) {
               </a>
             </div>
             {checkUpdateMutation.data && !checkUpdateMutation.data.upToDate && (
-              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="h-4 w-4 text-amber-300" />
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 text-amber-300 shrink-0" />
                   <span className="text-sm font-medium text-amber-300">
                     {checkUpdateMutation.data.message}
                   </span>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={() => setUpdateDialogOpen(true)}
-                  className="bg-amber-500 hover:bg-amber-400 text-slate-950"
-                >
-                  <Download className="h-3.5 w-3.5 mr-1" />
-                  Lihat &amp; Install Update
-                </Button>
+                {/* Show new commits */}
+                {checkUpdateMutation.data.newCommits?.length > 0 && (
+                  <ScrollArea className="h-32 rounded-md border border-slate-800 bg-slate-900/50 p-2">
+                    <div className="space-y-1 font-mono text-xs">
+                      {checkUpdateMutation.data.newCommits.map((commit: string, idx: number) => (
+                        <div key={idx} className="text-slate-300 py-0.5">{commit}</div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
+                {/* Manual update instructions */}
+                <div className="rounded-md border border-slate-700 bg-slate-950/60 p-3">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Terminal className="h-3.5 w-3.5 text-cyan-300" />
+                    <span className="text-xs font-semibold text-slate-200">
+                      Untuk update, SSH ke VPS dan jalankan:
+                    </span>
+                  </div>
+                  <pre className="text-[11px] text-emerald-300 font-mono overflow-x-auto whitespace-pre-wrap break-all">
+{`cd /path/to/ZephyrStream
+git pull
+bun install
+bun run db:push
+bun run build
+sudo systemctl restart zephystream
+sudo systemctl restart zephystream-realtime`}
+                  </pre>
+                </div>
               </div>
             )}
             {checkUpdateMutation.data?.upToDate && (
@@ -388,53 +381,6 @@ export function SettingsView({ user }: { user: any }) {
         </div>
       </Card>
 
-      {/* Update dialog */}
-      <Dialog open={updateDialogOpen} onOpenChange={setUpdateDialogOpen}>
-        <DialogContent className="bg-slate-950 border-slate-800 text-white max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Download className="h-5 w-5 text-emerald-300" />
-              Update Available
-            </DialogTitle>
-            <DialogDescription className="text-slate-400">
-              {checkUpdateMutation.data?.newCommits?.length || 0} new commit(s) from GitHub
-            </DialogDescription>
-          </DialogHeader>
-
-          <ScrollArea className="h-48 rounded-lg border border-slate-800 bg-slate-900/50 p-3">
-            <div className="space-y-1 font-mono text-xs">
-              {checkUpdateMutation.data?.newCommits?.map((commit: string, idx: number) => (
-                <div key={idx} className="text-slate-300 py-0.5">{commit}</div>
-              ))}
-            </div>
-          </ScrollArea>
-
-          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-300">
-            <AlertCircle className="h-3.5 w-3.5 inline mr-1" />
-            After pulling, you may need to run <code className="text-amber-200">bun install</code> and{" "}
-            <code className="text-amber-200">bun run db:push</code> if dependencies or schema changed,
-            then restart the server.
-          </div>
-
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setUpdateDialogOpen(false)}>
-              Nanti
-            </Button>
-            <Button
-              onClick={() => pullUpdateMutation.mutate()}
-              disabled={pullUpdateMutation.isPending}
-              className="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950"
-            >
-              {pullUpdateMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Download className="h-4 w-4 mr-2" />
-              )}
-              Pull &amp; Install
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
