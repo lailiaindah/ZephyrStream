@@ -11,6 +11,7 @@ import { startFFmpegStream, isProcessRunning } from "@/lib/ffmpeg";
 import { createOrUpdateBroadcast, uploadThumbnail, pickTitleAndThumbnail, refreshAccessToken } from "@/lib/youtube";
 import { runCleanupIfNeeded } from "@/lib/cleanup";
 import { runBackupIfNeeded } from "@/lib/backup";
+import { resolveVideoFiles, shouldShuffleQueue, shuffleArray } from "@/lib/video-source";
 
 const CHECK_INTERVAL_MS = 30 * 1000; // 30 seconds
 let schedulerInterval: NodeJS.Timeout | null = null;
@@ -192,32 +193,21 @@ async function retryStreamStart(stream: any, retryCount: number) {
     return;
   }
 
-  // Resolve video files
-  let videoFiles: string[] = [];
-  if (fresh.sourceType === "local" && fresh.sourcePath) {
-    const fs = await import("fs/promises");
-    const path = await import("path");
-    const entries = await fs.readdir(fresh.sourcePath);
-    const VIDEO_EXTS = [".mp4", ".mov", ".mkv", ".avi", ".webm", ".ts", ".flv"];
-    videoFiles = entries
-      .filter((f) => VIDEO_EXTS.some((ext) => f.toLowerCase().endsWith(ext)))
-      .map((f) => path.join(fresh.sourcePath!, f));
-  } else if (fresh.sourceFileIds) {
-    const fileIds: string[] = JSON.parse(fresh.sourceFileIds);
-    const files = await db.uploadedFile.findMany({ where: { id: { in: fileIds } } });
-    videoFiles = files.filter((f) => f.storagePath).map((f) => f.storagePath!);
-  }
+  // Resolve video files (combines individual files + playlist expansion)
+  const resolved = await resolveVideoFiles(fresh);
+  const videoFiles = resolved.videoFiles;
 
   if (videoFiles.length === 0) {
     throw new Error("No video files found for retry");
   }
 
-  // Shuffle if enabled
-  if (fresh.shuffle && videoFiles.length > 1) {
-    for (let i = videoFiles.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [videoFiles[i], videoFiles[j]] = [videoFiles[j], videoFiles[i]];
-    }
+  // Shuffle if enabled (or if any selected playlist forces shuffle)
+  if (shouldShuffleQueue(fresh.shuffle, resolved) && videoFiles.length > 1) {
+    shuffleArray(videoFiles);
+    console.log(
+      `[Scheduler] Shuffled ${videoFiles.length} video files for retry ` +
+      `(${resolved.individualCount} individual + ${resolved.playlistCount} from ${resolved.playlistExpandedCount} playlist(s))`
+    );
   }
 
   const minSec = fresh.minHours * 3600;
@@ -324,37 +314,23 @@ async function startStreamInternal(stream: any) {
     return;
   }
 
-  // Resolve video files
-  let videoFiles: string[] = [];
-
-  if (stream.sourceType === "local" && stream.sourcePath) {
-    const fs = await import("fs/promises");
-    const path = await import("path");
-    const entries = await fs.readdir(stream.sourcePath);
-    const VIDEO_EXTS = [".mp4", ".mov", ".mkv", ".avi", ".webm", ".ts", ".flv"];
-    videoFiles = entries
-      .filter((f) => VIDEO_EXTS.some((ext) => f.toLowerCase().endsWith(ext)))
-      .map((f) => path.join(stream.sourcePath!, f));
-  } else if (stream.sourceFileIds) {
-    const fileIds: string[] = JSON.parse(stream.sourceFileIds);
-    const files = await db.uploadedFile.findMany({
-      where: { id: { in: fileIds } },
-    });
-    videoFiles = files.filter((f) => f.storagePath).map((f) => f.storagePath!);
-  }
+  // Resolve video files (combines individual files + playlist expansion)
+  const resolved = await resolveVideoFiles(stream);
+  const videoFiles = resolved.videoFiles;
 
   if (videoFiles.length === 0) {
     throw new Error("No video files found");
   }
 
   // === VIDEO SHUFFLE ===
-  // If the stream has shuffle enabled, randomize the playback order.
-  if (stream.shuffle && videoFiles.length > 1) {
-    for (let i = videoFiles.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [videoFiles[i], videoFiles[j]] = [videoFiles[j], videoFiles[i]];
-    }
-    console.log(`[Scheduler] Shuffled ${videoFiles.length} video files`);
+  // If the stream (or any selected playlist with shuffleOwn=true) has
+  // shuffle enabled, randomize the playback order.
+  if (shouldShuffleQueue(stream.shuffle, resolved) && videoFiles.length > 1) {
+    shuffleArray(videoFiles);
+    console.log(
+      `[Scheduler] Shuffled ${videoFiles.length} video files ` +
+      `(${resolved.individualCount} individual + ${resolved.playlistCount} from ${resolved.playlistExpandedCount} playlist(s))`
+    );
   }
 
   await db.stream.update({
@@ -592,6 +568,7 @@ export async function createNextDaySchedule(stream: any) {
         sourceType: stream.sourceType,
         sourcePath: stream.sourcePath,
         sourceFileIds: stream.sourceFileIds,
+        playlistSourceIds: stream.playlistSourceIds,
         shuffle: stream.shuffle,
         minHours: stream.minHours,
         maxHours: stream.maxHours,

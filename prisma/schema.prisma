@@ -26,6 +26,7 @@ model User {
   titles       TitleItem[]
   thumbnails   ThumbnailItem[]
   templates    StreamTemplate[]
+  playlists    Playlist[]
   sessions     Session[]
 }
 
@@ -70,6 +71,7 @@ model Channel {
   files           UploadedFile[]
   titles          TitleItem[]
   thumbnails      ThumbnailItem[]
+  playlists       Playlist[]
 
   @@index([userId])
 }
@@ -158,6 +160,10 @@ model Stream {
   sourceType      String    @default("local") // local | gdrive
   sourcePath      String?   // Local folder path or Google Drive folder id
   sourceFileIds   String?   // JSON array of file IDs (for multi-file)
+  // JSON array of Playlist IDs whose videos will be combined into the
+  // playback queue at stream start. Playlists and individual files are
+  // merged together; if `shuffle` is on, the combined queue is shuffled.
+  playlistSourceIds String?
   shuffle         Boolean   @default(true)
   loopUntilDuration Boolean @default(true)
 
@@ -170,6 +176,12 @@ model Stream {
   maxHours        Float     @default(4.0)  // Maximum stream duration in hours
   autoCreateSchedule Boolean @default(false) // Auto-create next-day schedule on end/error
   autoDeleteAfterMinutes Int @default(30)
+  // Per-stream shuffle settings for title/thumbnail (random pick at
+  // schedule creation). When true, a random title/thumbnail is picked
+  // from the channel's list each time a schedule is created — instead
+  // of the rotator's sequential next-pick.
+  shuffleTitle       Boolean  @default(false)
+  shuffleThumbnail   Boolean  @default(false)
 
   // FFmpeg configuration
   encoder         String    @default("auto") // auto | x264 | nvenc | qsv | amf | videotoolbox
@@ -229,10 +241,51 @@ model UploadedFile {
 
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   channel      Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  playlistItems PlaylistItem[]
 
   @@index([userId])
   @@index([channelId])
   @@index([storageType])
+}
+
+// === Playlist model ===
+// A playlist is a named, ordered collection of uploaded videos, scoped to
+// a channel. When creating a stream, the user can either pick individual
+// files OR pick one or more playlists. At stream start, the playlist's
+// video file paths are resolved and (if shuffle is on) randomized.
+model Playlist {
+  id          String   @id @default(cuid())
+  userId      String
+  channelId   String?  // Optional — when set, playlist is scoped to this channel
+  name        String
+  description String?
+  // Optional: shuffle the playlist's videos each time the playlist is used.
+  // If null/undefined, falls back to the stream's own `shuffle` setting.
+  shuffleOwn  Boolean?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel     Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  items       PlaylistItem[]
+
+  @@index([userId])
+  @@index([channelId])
+}
+
+// Join/through model carrying the order of files inside a playlist.
+model PlaylistItem {
+  id          String   @id @default(cuid())
+  playlistId  String
+  fileId      String
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  playlist    Playlist     @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  file        UploadedFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([playlistId])
+  @@index([fileId])
 }
 
 model SystemMetric {

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { startFFmpegStream, isProcessRunning } from "@/lib/ffmpeg";
 import { createOrUpdateBroadcast, uploadThumbnail } from "@/lib/youtube";
+import { resolveVideoFiles, shouldShuffleQueue, shuffleArray } from "@/lib/video-source";
 
 export async function POST(
   _req: NextRequest,
@@ -38,49 +39,33 @@ export async function POST(
       );
     }
 
-    // Resolve video files
-    let videoFiles: string[] = [];
-    if (stream.sourceType === "local" && stream.sourcePath) {
-      const fs = await import("fs/promises");
-      const path = await import("path");
-      try {
-        const entries = await fs.readdir(stream.sourcePath);
-        const VIDEO_EXTS = [".mp4", ".mov", ".mkv", ".avi", ".webm", ".ts", ".flv"];
-        videoFiles = entries
-          .filter((f) => VIDEO_EXTS.some((ext) => f.toLowerCase().endsWith(ext)))
-          .map((f) => path.join(stream.sourcePath!, f));
-      } catch {
-        return NextResponse.json(
-          { error: `Cannot read source folder: ${stream.sourcePath}` },
-          { status: 400 }
-        );
-      }
-    } else if (stream.sourceFileIds) {
-      // Resolve uploaded files from the database
-      const fileIds: string[] = JSON.parse(stream.sourceFileIds);
-      const files = await db.uploadedFile.findMany({
-        where: { id: { in: fileIds } },
-      });
-      videoFiles = files
-        .filter((f) => f.storagePath)
-        .map((f) => f.storagePath!);
-    }
+    // Resolve video files (combines individual files + playlist expansion)
+    const resolved = await resolveVideoFiles(stream);
+    const videoFiles = resolved.videoFiles;
 
     if (videoFiles.length === 0) {
       return NextResponse.json(
-        { error: "No video files found. Please add source files to the stream." },
+        { error: "No video files found. Please add source files or playlists to the stream." },
         { status: 400 }
       );
     }
 
     // === VIDEO SHUFFLE ===
-    // If the stream has shuffle enabled, randomize the playback order.
-    if (stream.shuffle && videoFiles.length > 1) {
-      for (let i = videoFiles.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [videoFiles[i], videoFiles[j]] = [videoFiles[j], videoFiles[i]];
-      }
-      console.log(`[Start] Shuffled ${videoFiles.length} video files`);
+    // If the stream (or any selected playlist with shuffleOwn=true) has
+    // shuffle enabled, randomize the playback order. Each restart will
+    // produce a different order, so playlist contents are reshuffled
+    // every stream.
+    if (shouldShuffleQueue(stream.shuffle, resolved) && videoFiles.length > 1) {
+      shuffleArray(videoFiles);
+      console.log(
+        `[Start] Shuffled ${videoFiles.length} video files ` +
+        `(${resolved.individualCount} individual + ${resolved.playlistCount} from ${resolved.playlistExpandedCount} playlist(s))`
+      );
+    } else {
+      console.log(
+        `[Start] Resolved ${videoFiles.length} video files ` +
+        `(${resolved.individualCount} individual + ${resolved.playlistCount} from ${resolved.playlistExpandedCount} playlist(s)) — no shuffle`
+      );
     }
 
     // Update status to preparing

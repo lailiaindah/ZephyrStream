@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   UploadCloud,
   HardDrive,
@@ -30,13 +31,16 @@ import {
   FolderOpen,
   Download,
   Filter,
+  ListVideo,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PlaylistManager } from "./playlist-manager";
 
 export function FileManager() {
   const queryClient = useQueryClient();
   const [gdriveOpen, setGdriveOpen] = useState(false);
   const [channelFilter, setChannelFilter] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState<string>("files");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch channels for the filter dropdown
@@ -64,14 +68,31 @@ export function FileManager() {
   const uploadMutation = useMutation({
     mutationFn: async (files: File[]) => {
       const formData = new FormData();
-      formData.append("channelId", channelFilter === "all" ? "unassigned" : channelFilter);
+      // Send channelId via query string — the upload route uses formidable
+      // for streaming multipart parsing (bypassing Next.js 16's built-in
+      // body parser that fails for large files with "Server acted in an
+      // unexpected way"). formidable still receives file fields below.
+      const channelIdForUpload = channelFilter === "all" ? "unassigned" : channelFilter;
       files.forEach((f) => formData.append("files", f));
-      const res = await fetch("/api/files/upload", {
+      const res = await fetch(`/api/files/upload?channelId=${encodeURIComponent(channelIdForUpload)}`, {
         method: "POST",
         body: formData,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      // The server may return a non-JSON body if something goes wrong at
+      // the transport layer; guard against that so we never throw a
+      // confusing "Unexpected token 'S'..." JSON parse error to the user.
+      const text = await res.text();
+      let data: any;
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        throw new Error(
+          `Upload failed (HTTP ${res.status}). The server response was not valid JSON. ` +
+          `This usually means the file was too large or the connection was interrupted. ` +
+          `Try a smaller file or check your network.`
+        );
+      }
+      if (!res.ok) throw new Error(data.error || `Upload failed (HTTP ${res.status})`);
       return data;
     },
     onSuccess: (data) => {
@@ -196,153 +217,177 @@ export function FileManager() {
         )}
       </Card>
 
-      {/* Upload zone */}
-      <Card
-        className="border-2 border-dashed border-slate-700 hover:border-cyan-500/50 bg-slate-900/40 transition-colors cursor-pointer"
-        onClick={() => fileInputRef.current?.click()}
-        onDrop={handleDrop}
-        onDragOver={(e) => e.preventDefault()}
-      >
-        <div className="p-10 text-center">
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept="video/*"
-            onChange={handleFileChange}
-            className="hidden"
-          />
-          {uploadMutation.isPending ? (
-            <>
-              <Loader2 className="h-10 w-10 text-cyan-300 mx-auto mb-3 animate-spin" />
-              <p className="text-sm text-slate-300">
-                Uploading to {channelName}...
-              </p>
-            </>
-          ) : (
-            <>
-              <div className="flex items-center justify-center h-14 w-14 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-500/30 mx-auto mb-3">
-                <UploadCloud className="h-7 w-7 text-cyan-300" />
-              </div>
-              <p className="text-sm font-medium text-white mb-1">
-                Drop files here or click to upload
-              </p>
-              <p className="text-xs text-slate-500">
-                {channelFilter === "all"
-                  ? "Files will be uploaded as unassigned — select a channel to scope them"
-                  : `Files will be assigned to: ${channelName}`}
-              </p>
-              <p className="text-[10px] text-slate-600 mt-1">
-                Supports multiple files: MP4, MOV, MKV, AVI, WebM, TS, FLV
-              </p>
-            </>
-          )}
-        </div>
-      </Card>
-
-      {/* File list with delete-all */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-white">
-          {channelName} — {data?.length || 0} file(s)
-        </h3>
-        {data && data.length > 0 && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              if (confirm(`Delete ALL ${data.length} files for ${channelName}? This cannot be undone.`)) {
-                deleteAllMutation.mutate();
-              }
-            }}
-            disabled={deleteAllMutation.isPending}
-            className="text-rose-400 hover:bg-rose-500/10 hover:text-rose-300"
+      {/* Tabs: Files | Playlists */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2 bg-slate-900 border border-slate-800">
+          <TabsTrigger
+            value="files"
+            className="data-[state=active]:bg-cyan-500/20 data-[state=active]:text-cyan-300"
           >
-            {deleteAllMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-            ) : (
-              <Trash2 className="h-3.5 w-3.5 mr-1" />
-            )}
-            Delete All Files
-          </Button>
-        )}
-      </div>
+            <FileVideo className="h-3.5 w-3.5 mr-1.5" /> Files
+          </TabsTrigger>
+          <TabsTrigger
+            value="playlists"
+            className="data-[state=active]:bg-emerald-500/20 data-[state=active]:text-emerald-300"
+          >
+            <ListVideo className="h-3.5 w-3.5 mr-1.5" /> Playlists
+          </TabsTrigger>
+        </TabsList>
 
-      {isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Card key={i} className="border-slate-800/60 bg-slate-900/40 p-4">
-              <div className="h-16 zephyr-shimmer rounded-lg" />
-            </Card>
-          ))}
-        </div>
-      ) : !data || data.length === 0 ? (
-        <Card className="border-slate-800/60 bg-slate-900/40 p-10 text-center">
-          <FileVideo className="h-10 w-10 text-slate-700 mx-auto mb-2" />
-          <p className="text-sm text-slate-400">No files in this view</p>
-          <p className="text-xs text-slate-500 mt-1">
-            Upload files above or switch the channel filter
-          </p>
-        </Card>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {data.map((file) => (
-            <Card
-              key={file.id}
-              className="border-slate-800/60 bg-slate-900/40 zephyr-card-hover overflow-hidden"
-            >
-              <div className="p-4">
-                <div className="flex items-start gap-3">
-                  <div className={cn(
-                    "flex items-center justify-center h-10 w-10 rounded-lg shrink-0",
-                    file.storageType === "gdrive"
-                      ? "bg-amber-500/10 border border-amber-500/30"
-                      : "bg-emerald-500/10 border border-emerald-500/30"
-                  )}>
-                    {file.storageType === "gdrive" ? (
-                      <Cloud className="h-5 w-5 text-amber-300" />
-                    ) : (
-                      <HardDrive className="h-5 w-5 text-emerald-300" />
-                    )}
+        <TabsContent value="files" className="space-y-4 mt-4">
+          {/* Upload zone */}
+          <Card
+            className="border-2 border-dashed border-slate-700 hover:border-cyan-500/50 bg-slate-900/40 transition-colors cursor-pointer"
+            onClick={() => fileInputRef.current?.click()}
+            onDrop={handleDrop}
+            onDragOver={(e) => e.preventDefault()}
+          >
+            <div className="p-10 text-center">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="video/*"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              {uploadMutation.isPending ? (
+                <>
+                  <Loader2 className="h-10 w-10 text-cyan-300 mx-auto mb-3 animate-spin" />
+                  <p className="text-sm text-slate-300">
+                    Uploading to {channelName}...
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-center h-14 w-14 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-500/30 mx-auto mb-3">
+                    <UploadCloud className="h-7 w-7 text-cyan-300" />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white truncate">
-                      {file.originalName}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {file.size != null ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "—"}
-                    </p>
-                    <p className="text-[10px] text-slate-600 mt-0.5">
-                      {new Date(file.createdAt).toLocaleDateString()}
-                    </p>
-                    {file.channel && (
-                      <p className="text-[10px] text-cyan-400 mt-0.5">
-                        📺 {file.channel.name}
-                      </p>
-                    )}
-                    {!file.channel && (
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        ❓ Unassigned
-                      </p>
-                    )}
-                  </div>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => {
-                      if (confirm(`Delete "${file.originalName}"?`)) {
-                        deleteMutation.mutate(file.id);
-                      }
-                    }}
-                    className="h-7 w-7 text-slate-500 hover:text-rose-300"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
+                  <p className="text-sm font-medium text-white mb-1">
+                    Drop files here or click to upload
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {channelFilter === "all"
+                      ? "Files will be uploaded as unassigned — select a channel to scope them"
+                      : `Files will be assigned to: ${channelName}`}
+                  </p>
+                  <p className="text-[10px] text-slate-600 mt-1">
+                    Supports multiple files: MP4, MOV, MKV, AVI, WebM, TS, FLV
+                  </p>
+                </>
+              )}
+            </div>
+          </Card>
+
+          {/* File list with delete-all */}
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-white">
+              {channelName} — {data?.length || 0} file(s)
+            </h3>
+            {data && data.length > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  if (confirm(`Delete ALL ${data.length} files for ${channelName}? This cannot be undone.`)) {
+                    deleteAllMutation.mutate();
+                  }
+                }}
+                disabled={deleteAllMutation.isPending}
+                className="text-rose-400 hover:bg-rose-500/10 hover:text-rose-300"
+              >
+                {deleteAllMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                )}
+                Delete All Files
+              </Button>
+            )}
+          </div>
+
+          {isLoading ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {[1, 2, 3].map((i) => (
+                <Card key={i} className="border-slate-800/60 bg-slate-900/40 p-4">
+                  <div className="h-16 zephyr-shimmer rounded-lg" />
+                </Card>
+              ))}
+            </div>
+          ) : !data || data.length === 0 ? (
+            <Card className="border-slate-800/60 bg-slate-900/40 p-10 text-center">
+              <FileVideo className="h-10 w-10 text-slate-700 mx-auto mb-2" />
+              <p className="text-sm text-slate-400">No files in this view</p>
+              <p className="text-xs text-slate-500 mt-1">
+                Upload files above or switch the channel filter
+              </p>
             </Card>
-          ))}
-        </div>
-      )}
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {data.map((file) => (
+                <Card
+                  key={file.id}
+                  className="border-slate-800/60 bg-slate-900/40 zephyr-card-hover overflow-hidden"
+                >
+                  <div className="p-4">
+                    <div className="flex items-start gap-3">
+                      <div className={cn(
+                        "flex items-center justify-center h-10 w-10 rounded-lg shrink-0",
+                        file.storageType === "gdrive"
+                          ? "bg-amber-500/10 border border-amber-500/30"
+                          : "bg-emerald-500/10 border border-emerald-500/30"
+                      )}>
+                        {file.storageType === "gdrive" ? (
+                          <Cloud className="h-5 w-5 text-amber-300" />
+                        ) : (
+                          <HardDrive className="h-5 w-5 text-emerald-300" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-white truncate">
+                          {file.originalName}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {file.size != null ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "—"}
+                        </p>
+                        <p className="text-[10px] text-slate-600 mt-0.5">
+                          {new Date(file.createdAt).toLocaleDateString()}
+                        </p>
+                        {file.channel && (
+                          <p className="text-[10px] text-cyan-400 mt-0.5">
+                            📺 {file.channel.name}
+                          </p>
+                        )}
+                        {!file.channel && (
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            ❓ Unassigned
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => {
+                          if (confirm(`Delete "${file.originalName}"?`)) {
+                            deleteMutation.mutate(file.id);
+                          }
+                        }}
+                        className="h-7 w-7 text-slate-500 hover:text-rose-300"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="playlists" className="mt-4">
+          <PlaylistManager channelId={channelFilter} />
+        </TabsContent>
+      </Tabs>
 
       <GoogleDriveDialog
         key={channelFilter}

@@ -25,7 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { ENCODER_CHOICES, PRIVACY_OPTIONS, SPINNER_MODES, YOUTUBE_CATEGORIES, EMOJI_CATALOG, PRESET_CHOICES } from "@/lib/constants";
-import { Loader2, Youtube, Key, FileVideo, Settings2, Sparkles, Type, Shuffle, Calendar, Clock, Repeat, Save, FolderOpen } from "lucide-react";
+import { Loader2, Youtube, Key, FileVideo, Settings2, Sparkles, Type, Shuffle, Calendar, Clock, Repeat, Save, FolderOpen, ListVideo } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -61,6 +61,11 @@ function StreamFormInner({
   const [sourcePath, setSourcePath] = useState(editingStream?.sourcePath || "");
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>(
     editingStream?.sourceFileIds ? JSON.parse(editingStream.sourceFileIds) : []
+  );
+  // Playlist IDs selected as the source — at stream start, each playlist's
+  // videos are resolved and combined with any individually selected files.
+  const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<string[]>(
+    editingStream?.playlistSourceIds ? JSON.parse(editingStream.playlistSourceIds) : []
   );
   const [shuffle, setShuffle] = useState(editingStream?.shuffle ?? true);
   const [minHours, setMinHours] = useState(editingStream?.minHours ?? 2);
@@ -105,6 +110,8 @@ function StreamFormInner({
       sourceType: sourceType === "local" ? "local" : "uploaded",
       sourcePath: sourceType === "local" ? sourcePath : null,
       sourceFileIds: sourceType === "uploaded" ? selectedFileIds : null,
+      // Only include playlist IDs when source type is "uploaded"
+      playlistSourceIds: sourceType === "uploaded" ? selectedPlaylistIds : null,
       shuffle,
       minHours: Number(minHours),
       maxHours: Number(maxHours),
@@ -140,6 +147,26 @@ function StreamFormInner({
       prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]
     );
   };
+
+  const togglePlaylist = (id: string) => {
+    setSelectedPlaylistIds((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
+    );
+  };
+
+  // Fetch playlists for the selected channel so the user can pick one or more
+  // as the stream's source. When channelId is empty, we don't fetch — there
+  // are no playlists to pick from.
+  const { data: playlistsData } = useQuery({
+    queryKey: ["playlists", channelId],
+    queryFn: async () => {
+      if (!channelId) return [];
+      const res = await fetch(`/api/playlists?channelId=${channelId}`);
+      const data = await res.json();
+      return (data.playlists as any[]) || [];
+    },
+    enabled: !!channelId,
+  });
 
   const insertVariable = (token: string) => {
     setDescription((prev) => `${prev}${token}`);
@@ -608,55 +635,134 @@ function StreamFormInner({
                   </p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-slate-200">Select Uploaded Files</Label>
-                    {selectedFileIds.length > 0 && (
-                      <Badge variant="outline" className="border-cyan-500/40 text-cyan-300">
-                        {selectedFileIds.length} selected
-                      </Badge>
-                    )}
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-slate-200">Select Uploaded Files</Label>
+                      {selectedFileIds.length > 0 && (
+                        <Badge variant="outline" className="border-cyan-500/40 text-cyan-300">
+                          {selectedFileIds.length} selected
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-800 bg-slate-900/50">
+                      {!filesData || filesData.length === 0 ? (
+                        <div className="p-6 text-center">
+                          <FileVideo className="h-8 w-8 text-slate-700 mx-auto mb-2" />
+                          <p className="text-xs text-slate-500">
+                            {channelId
+                              ? "No files uploaded to this channel yet."
+                              : "No files uploaded yet. Go to the Files tab to upload."}
+                          </p>
+                        </div>
+                      ) : (
+                        filesData.map((file) => (
+                          <label
+                            key={file.id}
+                            className={cn(
+                              "flex items-center gap-3 p-3 cursor-pointer border-b border-slate-800 last:border-0 transition-colors",
+                              selectedFileIds.includes(file.id)
+                                ? "bg-cyan-500/10"
+                                : "hover:bg-slate-800/40"
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedFileIds.includes(file.id)}
+                              onChange={() => toggleFile(file.id)}
+                              className="rounded border-slate-600"
+                            />
+                            <FileVideo className="h-4 w-4 text-cyan-300 shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-slate-200 truncate">
+                                {file.originalName}
+                              </p>
+                              <p className="text-[10px] text-slate-500">
+                                {file.size != null ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "—"} • {file.mimeType || "unknown"}
+                              </p>
+                            </div>
+                          </label>
+                        ))
+                      )}
+                    </div>
                   </div>
-                  <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-800 bg-slate-900/50">
-                    {!filesData || filesData.length === 0 ? (
-                      <div className="p-6 text-center">
-                        <FileVideo className="h-8 w-8 text-slate-700 mx-auto mb-2" />
-                        <p className="text-xs text-slate-500">
-                          {channelId
-                            ? "No files uploaded to this channel yet."
-                            : "No files uploaded yet. Go to the Files tab to upload."}
-                        </p>
-                      </div>
-                    ) : (
-                      filesData.map((file) => (
-                        <label
-                          key={file.id}
-                          className={cn(
-                            "flex items-center gap-3 p-3 cursor-pointer border-b border-slate-800 last:border-0 transition-colors",
-                            selectedFileIds.includes(file.id)
-                              ? "bg-cyan-500/10"
-                              : "hover:bg-slate-800/40"
-                          )}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedFileIds.includes(file.id)}
-                            onChange={() => toggleFile(file.id)}
-                            className="rounded border-slate-600"
-                          />
-                          <FileVideo className="h-4 w-4 text-cyan-300 shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-slate-200 truncate">
-                              {file.originalName}
-                            </p>
-                            <p className="text-[10px] text-slate-500">
-                              {file.size != null ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "—"} • {file.mimeType || "unknown"}
-                            </p>
-                          </div>
-                        </label>
-                      ))
-                    )}
+
+                  {/* === Playlist selector === */}
+                  <div className="space-y-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-emerald-200 flex items-center gap-1.5">
+                        <ListVideo className="h-4 w-4 text-emerald-300" />
+                        Or pick from Playlists
+                      </Label>
+                      {selectedPlaylistIds.length > 0 && (
+                        <Badge variant="outline" className="border-emerald-500/40 text-emerald-300">
+                          {selectedPlaylistIds.length} playlist(s)
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Pick one or more playlists. Their videos will be combined with the
+                      individually-selected files above and played in order. If shuffle is
+                      ON, the combined queue is randomized.
+                    </p>
+                    <div className="max-h-48 overflow-y-auto rounded-md border border-slate-800 bg-slate-900/50">
+                      {!channelId ? (
+                        <div className="p-4 text-center text-[11px] text-slate-500">
+                          Select a channel to see its playlists
+                        </div>
+                      ) : !playlistsData || playlistsData.length === 0 ? (
+                        <div className="p-4 text-center text-[11px] text-slate-500">
+                          No playlists for this channel yet — go to Files → Playlists tab to create one
+                        </div>
+                      ) : (
+                        playlistsData.map((p) => {
+                          const count = p.itemCount ?? p.items?.length ?? 0;
+                          return (
+                            <label
+                              key={p.id}
+                              className={cn(
+                                "flex items-center gap-3 p-2.5 cursor-pointer border-b border-slate-800 last:border-0 transition-colors",
+                                selectedPlaylistIds.includes(p.id)
+                                  ? "bg-emerald-500/10"
+                                  : "hover:bg-slate-800/40"
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedPlaylistIds.includes(p.id)}
+                                onChange={() => togglePlaylist(p.id)}
+                                className="rounded border-slate-600"
+                              />
+                              <ListVideo className="h-4 w-4 text-emerald-300 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium text-slate-200 truncate">
+                                  {p.name}
+                                </p>
+                                <p className="text-[10px] text-slate-500">
+                                  {count} video(s)
+                                  {p.shuffleOwn === true
+                                    ? " • shuffle ON"
+                                    : p.shuffleOwn === false
+                                    ? " • shuffle OFF"
+                                    : ""}
+                                </p>
+                              </div>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
+
+                  {/* Summary of total sources */}
+                  {(selectedFileIds.length > 0 || selectedPlaylistIds.length > 0) && (
+                    <div className="text-[11px] text-cyan-300 bg-cyan-500/5 border border-cyan-500/20 rounded p-2">
+                      Total source: {selectedFileIds.length} individual file(s)
+                      {selectedPlaylistIds.length > 0 &&
+                        ` + ${selectedPlaylistIds.length} playlist(s)`}
+                      {shuffle ? " • will be shuffled at stream start" : " • will play in listed order"}
+                    </div>
+                  )}
                 </div>
               )}
             </TabsContent>

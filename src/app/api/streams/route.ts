@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
       sourceType,
       sourcePath,
       sourceFileIds,
+      playlistSourceIds,
       shuffle,
       minHours,
       maxHours,
@@ -123,6 +124,11 @@ export async function POST(req: NextRequest) {
         sourceFileIds: sourceFileIds
           ? (typeof sourceFileIds === "string" ? sourceFileIds : JSON.stringify(sourceFileIds))
           : (source?.sourceFileIds || null),
+        playlistSourceIds: playlistSourceIds
+          ? (typeof playlistSourceIds === "string"
+              ? playlistSourceIds
+              : JSON.stringify(playlistSourceIds))
+          : (source?.playlistSourceIds || null),
         shuffle: shuffle ?? source?.shuffle ?? true,
         minHours: minHours ?? source?.minHours ?? 2.0,
         maxHours: maxHours ?? source?.maxHours ?? 4.0,

@@ -51,7 +51,7 @@ export async function PATCH(
     const body = await req.json();
     const allowedFields = [
       "name", "description", "channelId", "streamKey", "rtmpUrl",
-      "sourceType", "sourcePath", "sourceFileIds", "shuffle",
+      "sourceType", "sourcePath", "sourceFileIds", "playlistSourceIds", "shuffle",
       "minHours", "maxHours",
       "startAt", "encoder", "copyMode", "videoBitrate", "audioBitrate",
       "resolution", "fps", "preset", "privacyStatus", "categoryId", "tags",
@@ -66,7 +66,7 @@ export async function PATCH(
       if (body[field] !== undefined) {
         if (field === "startAt") {
           updateData[field] = body[field] ? new Date(body[field]) : null;
-        } else if (field === "sourceFileIds" || field === "spinnerEmojis") {
+        } else if (field === "sourceFileIds" || field === "spinnerEmojis" || field === "playlistSourceIds") {
           updateData[field] = body[field] ? JSON.stringify(body[field]) : null;
         } else if (trimFields.includes(field) && typeof body[field] === "string") {
           // Trim whitespace and convert empty strings to null
