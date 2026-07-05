@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -534,12 +534,24 @@ function EditPlaylistDialog({
     enabled: open,
   });
 
-  // When the full playlist arrives, sync selectedFileIds if it's currently
-  // empty (i.e. the prop didn't include items). We only do this once per
-  // open — if the user has already added/removed items, we don't override.
+  // When the full playlist arrives, sync selectedFileIds ONCE — only if
+  // they haven't been synced yet (hasSyncedRef is false). After the
+  // initial sync, the user can freely add/remove items, including
+  // clearing the list entirely — we never re-populate from the server.
+  // Previously this used `selectedFileIds.length === 0` as a proxy for
+  // "haven't synced", which broke when the user removed ALL items: the
+  // effect would fire on the 1→0 transition and snap the list back to
+  // the original items, making it impossible to clear a playlist.
+  const hasSyncedRef = useRef(false);
   useEffect(() => {
-    if (fullPlaylist?.items && selectedFileIds.length === 0) {
-      setSelectedFileIds(fullPlaylist.items.map((it: any) => it.fileId));
+    if (fullPlaylist?.items && !hasSyncedRef.current) {
+      hasSyncedRef.current = true;
+      // Only populate if the initial state from the prop was empty.
+      // If the prop already included items (selectedFileIds is non-empty),
+      // we keep those — the user may have already started editing.
+      if (selectedFileIds.length === 0) {
+        setSelectedFileIds(fullPlaylist.items.map((it: any) => it.fileId));
+      }
     }
   }, [fullPlaylist, selectedFileIds.length]);
 
