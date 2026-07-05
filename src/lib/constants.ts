@@ -1,7 +1,7 @@
 // ZephyrStream constants — shared across the app
 
 export const APP_NAME = "ZephyrStream";
-export const APP_VERSION = "1.4.2";
+export const APP_VERSION = "1.4.3";
 export const APP_TAGLINE = "Multi-Channel YouTube Live Streaming Platform";
 
 // Media file extensions supported by the platform
@@ -109,9 +109,12 @@ export const TEMPLATE_VARIABLES = [
 export const SESSION_COOKIE_NAME = "zephyr_session";
 export const SESSION_EXPIRY_DAYS = 7;
 
-// File paths
-export const UPLOAD_DIR = "/home/z/my-project/public/uploads";
-export const STREAM_LOG_DIR = "/home/z/my-project/logs/streams";
+// File paths — use dynamic paths relative to project root
+// This ensures the app works regardless of where it's installed
+import path from "path";
+const PROJECT_ROOT = process.cwd();
+export const UPLOAD_DIR = path.join(PROJECT_ROOT, "public", "uploads");
+export const STREAM_LOG_DIR = path.join(PROJECT_ROOT, "logs", "streams");
 export const FFMPEG_BINARY = process.env.FFMPEG_PATH || "ffmpeg";
 export const FFPROBE_BINARY = process.env.FFPROBE_PATH || "ffprobe";
 

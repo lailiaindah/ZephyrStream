@@ -30,7 +30,6 @@ export async function POST(req: Request) {
       process.cwd(),                                    // current working dir
       path.resolve(process.cwd(), ".."),                // parent of cwd
       path.resolve(process.cwd(), "../.."),             // grandparent
-      "/home/z/my-project",                             // dev environment
     ];
 
     let projectDir = "";

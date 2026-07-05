@@ -17,8 +17,9 @@ import { promisify } from "util";
 
 const execAsync = promisify(exec);
 
-const BACKUP_DIR = "/home/z/my-project/backups";
-const DB_PATH = "/home/z/my-project/db/custom.db";
+const PROJECT_ROOT = process.cwd();
+const BACKUP_DIR = path.join(PROJECT_ROOT, "backups");
+const DB_PATH = process.env.DATABASE_URL?.replace("file:", "") || path.join(PROJECT_ROOT, "db", "custom.db");
 const RETENTION_DAYS = 7;
 const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 

@@ -63,6 +63,7 @@ export function getAuthUrl(
     scope: [
       "https://www.googleapis.com/auth/youtube",
       "https://www.googleapis.com/auth/youtube.upload",
+      "https://www.googleapis.com/auth/drive.readonly",
     ],
     state,
     prompt: "consent", // force consent to get a new refresh token
