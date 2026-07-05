@@ -245,11 +245,28 @@ cp .env.example .env
 
 Edit `.env`:
 ```env
-DATABASE_URL=file:/home/YOUR_USERNAME/ZephyrStream/db/custom.db
-JWT_SECRET=generate_with_openssl_rand_base64_64
+# Use ABSOLUTE path to your project folder (case-sensitive!)
+DATABASE_URL=file:/home/ubuntu/ZephyrStream/db/custom.db
+
+# Generate secret: openssl rand -hex 32
+JWT_SECRET=your_generated_secret_here
+
+# FFmpeg paths (leave default if in PATH)
 FFMPEG_PATH=ffmpeg
 FFPROBE_PATH=ffprobe
+
+# Set to production for VPS
+NODE_ENV=production
+
+# Only set HTTPS=true if using domain + SSL reverse proxy
+# Leave commented for http://IP-VPS:3000 access
+# HTTPS=true
 ```
+
+> **⚠️ Important for HTTP access (no domain):**
+> If accessing via `http://IP-VPS:3000` (no HTTPS), do NOT set `HTTPS=true`.
+> The app automatically uses non-secure cookies for HTTP access.
+> Only enable `HTTPS=true` when you have a domain + SSL certificate.
 
 ### 4. Initialize the Database
 
@@ -463,4 +480,4 @@ Personal use. Inspired by the original Zephyr Streamer (PyQt6), reimplemented fr
 
 ---
 
-**ZephyrStream v1.3.4** — Built with ❤️ for the streaming community.
+**ZephyrStream v1.3.5** — Built with ❤️ for the streaming community.
