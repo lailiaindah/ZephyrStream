@@ -22,16 +22,34 @@ export async function POST(req: Request) {
     const url = new URL(req.url);
     const action = url.searchParams.get("action") || "check";
 
-    const projectDir = "/home/z/my-project";
+    // Try to find the git repository directory.
+    // In production (standalone build), the server runs from .next/standalone/
+    // but the .git folder is in the project root (parent of .next).
+    // We try several candidate paths to find the git repo.
+    const candidates = [
+      process.cwd(),                                    // current working dir
+      path.resolve(process.cwd(), ".."),                // parent of cwd
+      path.resolve(process.cwd(), "../.."),             // grandparent
+      "/home/z/my-project",                             // dev environment
+    ];
 
-    // Verify it's a git repo
-    try {
-      await fs.access(path.join(projectDir, ".git"));
-    } catch {
-      return NextResponse.json(
-        { error: "Project directory is not a git repository" },
-        { status: 400 }
-      );
+    let projectDir = "";
+    for (const candidate of candidates) {
+      try {
+        await fs.access(path.join(candidate, ".git"));
+        projectDir = candidate;
+        break;
+      } catch {}
+    }
+
+    // If no git repo found, return a helpful message
+    if (!projectDir) {
+      return NextResponse.json({
+        upToDate: true,
+        currentVersion: APP_VERSION,
+        currentCommit: "unknown",
+        message: `Git repository not found. Current version: v${APP_VERSION}. To update, run 'git pull' manually via SSH.`,
+      });
     }
 
     // Get current commit hash (short) for display
