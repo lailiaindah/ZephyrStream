@@ -69,7 +69,8 @@ upload/
 .zscripts/
 agent-ctx/
 skills/
-mini-services/
+# mini-services node_modules are ignored, but source code IS tracked
+mini-services/*/node_modules/
 examples/
 Caddyfile
 dev.log
