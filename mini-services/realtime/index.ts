@@ -13,7 +13,6 @@ import path from "path";
 
 // Dynamically import PrismaClient from the parent project's node_modules
 // This ensures we use the already-generated client
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const parentNodeModules = path.resolve(__dirname, "../../node_modules/@prisma/client");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { PrismaClient } = require(parentNodeModules);

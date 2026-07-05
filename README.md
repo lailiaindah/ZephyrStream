@@ -480,4 +480,4 @@ Personal use. Inspired by the original Zephyr Streamer (PyQt6), reimplemented fr
 
 ---
 
-**ZephyrStream v1.3.5** — Built with ❤️ for the streaming community.
+**ZephyrStream v1.3.6** — Built with ❤️ for the streaming community.
