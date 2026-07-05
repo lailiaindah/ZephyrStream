@@ -15,7 +15,7 @@ export async function listDriveFiles(
   const oauth2Client = new google.auth.OAuth2(
     clientId,
     clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({
     access_token: accessToken,
@@ -44,7 +44,7 @@ export async function getDriveFile(
   const oauth2Client = new google.auth.OAuth2(
     clientId,
     clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({
     access_token: accessToken,
@@ -72,7 +72,7 @@ export async function downloadDriveFile(
   const oauth2Client = new google.auth.OAuth2(
     clientId,
     clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({
     access_token: accessToken,
@@ -110,7 +110,7 @@ export function getDriveAuthUrl(clientId: string, clientSecret: string, state: s
   const oauth2Client = new google.auth.OAuth2(
     clientId,
     clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    "http://localhost:3000/api/channels/oauth-callback"
   );
 
   return oauth2Client.generateAuthUrl({
@@ -133,7 +133,7 @@ export async function exchangeDriveCode(
   const oauth2Client = new google.auth.OAuth2(
     clientId,
     clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    "http://localhost:3000/api/channels/oauth-callback"
   );
 
   const { tokens } = await oauth2Client.getToken(code);
