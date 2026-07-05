@@ -42,12 +42,20 @@ export function buildOAuthClient(channel: {
   return oauth2Client;
 }
 
-// Generate the OAuth authorization URL for a channel
-export function getAuthUrl(clientId: string, clientSecret: string, state: string): string {
+// Generate the OAuth authorization URL for a channel.
+// Uses a web redirect URI (NOT the deprecated OOB flow).
+// The redirectUri should be the full URL back to the app's callback endpoint,
+// e.g. http://IP-VPS:3000/api/channels/oauth-callback
+export function getAuthUrl(
+  clientId: string,
+  clientSecret: string,
+  state: string,
+  redirectUri: string
+): string {
   const oauth2Client = new google.auth.OAuth2(
     clientId,
     clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    redirectUri
   );
 
   return oauth2Client.generateAuthUrl({
@@ -61,11 +69,13 @@ export function getAuthUrl(clientId: string, clientSecret: string, state: string
   });
 }
 
-// Exchange an authorization code for tokens
+// Exchange an authorization code for tokens.
+// redirectUri must match the one used in getAuthUrl.
 export async function exchangeCodeForTokens(
   clientId: string,
   clientSecret: string,
-  code: string
+  code: string,
+  redirectUri: string
 ): Promise<{
   access_token: string;
   refresh_token: string | undefined;
@@ -74,7 +84,7 @@ export async function exchangeCodeForTokens(
   const oauth2Client = new google.auth.OAuth2(
     clientId,
     clientSecret,
-    "urn:ietf:wg:oauth:2.0:oob"
+    redirectUri
   );
 
   const { tokens } = await oauth2Client.getToken(code);

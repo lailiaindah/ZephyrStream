@@ -217,9 +217,11 @@ function ChannelFormInner({
         ) : (
           <div className="space-y-5 py-2">
             <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-4">
-              <h4 className="text-sm font-semibold text-cyan-300 mb-2">Step 1: Authorize</h4>
+              <h4 className="text-sm font-semibold text-cyan-300 mb-2">Authorize with Google</h4>
               <p className="text-xs text-slate-300 mb-3">
-                Click the button below to open Google's authorization page. Sign in with the YouTube account you want to stream to.
+                Click the button below to open Google&apos;s authorization page. After you
+                authorize, Google will automatically redirect back to ZephyrStream and
+                connect your channel. No code copy-paste needed!
               </p>
               <Button
                 onClick={handleAuthorize}
@@ -234,31 +236,11 @@ function ChannelFormInner({
                 )}
                 Open Google Authorization
               </Button>
-            </div>
-
-            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4">
-              <h4 className="text-sm font-semibold text-emerald-300 mb-2">Step 2: Paste the code</h4>
-              <p className="text-xs text-slate-300 mb-3">
-                After authorizing, Google will show you a code. Copy and paste it below.
+              <p className="text-[11px] text-slate-500 mt-3">
+                Make sure you have added this redirect URI in Google Cloud Console:
+                <br />
+                <code className="text-cyan-300">http://YOUR-VPS-IP:3000/api/channels/oauth-callback</code>
               </p>
-              <Input
-                value={authCode}
-                onChange={(e) => setAuthCode(e.target.value)}
-                placeholder="4/0Axxxxx..."
-                className="bg-slate-900 border-slate-700 text-white font-mono text-xs"
-              />
-              <Button
-                onClick={handleExchange}
-                disabled={!authCode || exchangeMutation.isPending}
-                className="w-full mt-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950"
-              >
-                {exchangeMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Copy className="h-4 w-4 mr-2" />
-                )}
-                Connect Channel
-              </Button>
             </div>
 
             <Button variant="ghost" onClick={() => setShowAuthStep(false)} className="w-full">

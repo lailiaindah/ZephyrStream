@@ -332,11 +332,21 @@ sudo journalctl -u zephystream -f
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create project → Enable **YouTube Data API v3**
-3. **APIs & Services → Credentials → Create Credentials → OAuth client ID → Desktop app**
-4. Copy **Client ID** and **Client Secret**
-5. In ZephyrStream: **Channels → Add Channel** → enter name, Client ID, Client Secret
-6. Click **Create Channel** → authorization page opens
-7. Sign in with YouTube account, copy code, paste back → **Connect Channel**
+3. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
+4. Choose **Web application** (NOT Desktop app — OOB flow is deprecated)
+5. Under **Authorized redirect URIs**, add:
+   ```
+   http://YOUR-VPS-IP:3000/api/channels/oauth-callback
+   ```
+   (Replace `YOUR-VPS-IP` with your VPS IP address)
+6. Copy **Client ID** and **Client Secret**
+7. In ZephyrStream: **Channels → Add Channel** → enter name, Client ID, Client Secret
+8. Click **Create Channel** → click **Open Google Authorization**
+9. Sign in with YouTube account → Google auto-redirects back → channel connected!
+
+> **Note:** Google blocked the old OOB (out-of-band) flow. You MUST use
+> "Web application" type with a redirect URI. No code copy-paste needed —
+> the redirect is automatic.
 
 Tokens are auto-refreshed — no re-authorization needed.
 
@@ -480,4 +490,4 @@ Personal use. Inspired by the original Zephyr Streamer (PyQt6), reimplemented fr
 
 ---
 
-**ZephyrStream v1.3.6** — Built with ❤️ for the streaming community.
+**ZephyrStream v1.4.0** — Built with ❤️ for the streaming community.

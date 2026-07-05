@@ -1,7 +1,7 @@
 // ZephyrStream constants — shared across the app
 
 export const APP_NAME = "ZephyrStream";
-export const APP_VERSION = "1.3.6";
+export const APP_VERSION = "1.4.0";
 export const APP_TAGLINE = "Multi-Channel YouTube Live Streaming Platform";
 
 // Media file extensions supported by the platform

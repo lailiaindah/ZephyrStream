@@ -1,4 +1,7 @@
 // POST /api/channels/[id]/exchange-code — Exchange OAuth code for tokens
+// DEPRECATED: This route is kept for backward compatibility but the new
+// OAuth flow uses /api/channels/oauth-callback (web redirect) instead.
+// Google blocked the OOB flow, so this route will fail for new authorizations.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -26,10 +29,16 @@ export async function POST(
       return NextResponse.json({ error: "Authorization code is required" }, { status: 400 });
     }
 
+    // Build redirect URI from request (should match what was used in getAuthUrl)
+    const protocol = req.headers.get("x-forwarded-proto") || "http";
+    const host = req.headers.get("host") || req.headers.get("x-forwarded-host");
+    const redirectUri = `${protocol}://${host}/api/channels/oauth-callback`;
+
     const tokens = await exchangeCodeForTokens(
       channel.clientId,
       channel.clientSecret,
-      code
+      code,
+      redirectUri
     );
 
     // Update the channel with the tokens
