@@ -123,32 +123,50 @@ function ChannelFormInner({
     const channelId = editingChannel?.id || saveMutation.data?.channel?.id;
     if (!channelId) return;
 
-    // Open auth URL in popup window
+    // Open Google auth in new tab (not popup — user needs to copy URL after)
     authUrlMutation.mutateAsync(channelId).then((data) => {
-      const popup = window.open(data.authUrl, "google-auth", "width=500,height=600");
-
-      // Listen for postMessage from popup (oauth-callback sends it)
-      const messageHandler = (event: MessageEvent) => {
-        if (event.data?.type === "oauth-success") {
-          window.removeEventListener("message", messageHandler);
-          toast.success("Channel connected to YouTube!");
-          queryClient.invalidateQueries({ queryKey: ["channels"] });
-          queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-          onOpenChange(false);
-          setName("");
-          setDescription("");
-          setClientId("");
-          setClientSecret("");
-          setShowAuthStep(false);
-          if (popup) popup.close();
-        } else if (event.data?.type === "oauth-error") {
-          window.removeEventListener("message", messageHandler);
-          toast.error(`OAuth error: ${event.data.error}`);
-          if (popup) popup.close();
-        }
-      };
-      window.addEventListener("message", messageHandler);
+      window.open(data.authUrl, "_blank");
+      toast.info(
+        "After authorizing, copy the full URL from the browser address bar and paste it below.",
+        { duration: 8000 }
+      );
     });
+  };
+
+  // Exchange code extracted from the redirect URL
+  const exchangeUrlMutation = useMutation({
+    mutationFn: async ({ channelId, redirectUrl }: { channelId: string; redirectUrl: string }) => {
+      const res = await fetch(`/api/channels/${channelId}/exchange-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ redirectUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to exchange code");
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success("Channel connected to YouTube!");
+      if (data.channelInfo) {
+        toast.success(`Connected as: ${data.channelInfo.title}`);
+      }
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      onOpenChange(false);
+      setName("");
+      setDescription("");
+      setClientId("");
+      setClientSecret("");
+      setAuthCode("");
+      setShowAuthStep(false);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const handleExchangeUrl = () => {
+    const channelId = editingChannel?.id || saveMutation.data?.channel?.id;
+    if (!channelId || !authCode) return;
+    exchangeUrlMutation.mutate({ channelId, redirectUrl: authCode });
   };
 
   return (
@@ -235,11 +253,10 @@ function ChannelFormInner({
         ) : (
           <div className="space-y-5 py-2">
             <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-4">
-              <h4 className="text-sm font-semibold text-cyan-300 mb-2">Authorize with Google</h4>
+              <h4 className="text-sm font-semibold text-cyan-300 mb-2">Step 1: Authorize with Google</h4>
               <p className="text-xs text-slate-300 mb-3">
-                Click the button below to open Google&apos;s authorization page. After you
-                authorize, Google will automatically redirect back to ZephyrStream and
-                connect your channel. No code copy-paste needed!
+                Click the button to open Google&apos;s authorization page. Sign in with your
+                YouTube account and click Allow.
               </p>
               <Button
                 onClick={handleAuthorize}
@@ -254,11 +271,40 @@ function ChannelFormInner({
                 )}
                 Open Google Authorization
               </Button>
-              <p className="text-[11px] text-slate-500 mt-3">
-                Make sure you have added this redirect URI in Google Cloud Console:
-                <br />
-                <code className="text-cyan-300">http://YOUR-VPS-IP:3000/api/channels/oauth-callback</code>
+            </div>
+
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4">
+              <h4 className="text-sm font-semibold text-emerald-300 mb-2">
+                Step 2: Paste the redirect URL
+              </h4>
+              <p className="text-xs text-slate-300 mb-3">
+                After you authorize, Google will redirect to a page that shows an error
+                (like &quot;This site can&apos;t be reached&quot;). That&apos;s normal!
+                <br /><br />
+                <strong>Copy the full URL from the browser address bar</strong> and paste it below.
+                It looks like:
+                <code className="block mt-1 p-2 bg-slate-900 rounded text-[10px] text-cyan-300 break-all">
+                  http://localhost:3000/api/channels/oauth-callback?code=4/0Axxxxx...
+                </code>
               </p>
+              <Input
+                value={authCode}
+                onChange={(e) => setAuthCode(e.target.value)}
+                placeholder="http://localhost:3000/api/channels/oauth-callback?code=..."
+                className="bg-slate-900 border-slate-700 text-white font-mono text-xs"
+              />
+              <Button
+                onClick={handleExchangeUrl}
+                disabled={!authCode || exchangeUrlMutation.isPending}
+                className="w-full mt-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950"
+              >
+                {exchangeUrlMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Copy className="h-4 w-4 mr-2" />
+                )}
+                Connect Channel
+              </Button>
             </div>
 
             <Button variant="ghost" onClick={() => setShowAuthStep(false)} className="w-full">

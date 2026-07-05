@@ -1,7 +1,7 @@
 // POST /api/channels/[id]/exchange-code — Exchange OAuth code for tokens
-// DEPRECATED: This route is kept for backward compatibility but the new
-// OAuth flow uses /api/channels/oauth-callback (web redirect) instead.
-// Google blocked the OOB flow, so this route will fail for new authorizations.
+// Accepts either { code: "..." } or { redirectUrl: "http://localhost:3000/..." }
+// The redirectUrl approach lets users paste the full URL from browser address bar
+// after Google redirects (works without domain — uses localhost redirect URI).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -24,15 +24,31 @@ export async function POST(
     }
 
     const body = await req.json();
-    const { code } = body;
-    if (!code) {
-      return NextResponse.json({ error: "Authorization code is required" }, { status: 400 });
+    let code = body.code;
+    const redirectUrl = body.redirectUrl;
+
+    // If user pasted the full redirect URL, extract the code from it
+    if (!code && redirectUrl) {
+      try {
+        const url = new URL(redirectUrl);
+        code = url.searchParams.get("code");
+      } catch {
+        return NextResponse.json(
+          { error: "Invalid URL format. Paste the full URL from the browser address bar." },
+          { status: 400 }
+        );
+      }
     }
 
-    // Build redirect URI from request (should match what was used in getAuthUrl)
-    const protocol = req.headers.get("x-forwarded-proto") || "http";
-    const host = req.headers.get("host") || req.headers.get("x-forwarded-host");
-    const redirectUri = `${protocol}://${host}/api/channels/oauth-callback`;
+    if (!code) {
+      return NextResponse.json(
+        { error: "Authorization code not found. Paste the full URL including the code parameter." },
+        { status: 400 }
+      );
+    }
+
+    // The redirect URI must match what was used in getAuthUrl
+    const redirectUri = "http://localhost:3000/api/channels/oauth-callback";
 
     const tokens = await exchangeCodeForTokens(
       channel.clientId,
@@ -57,13 +73,15 @@ export async function POST(
     let channelInfo = null;
     try {
       channelInfo = await getChannelInfo(channel.id);
-      await db.channel.update({
-        where: { id: channel.id },
-        data: {
-          youtubeChannelId: channelInfo.id,
-          youtubeChannelName: channelInfo.title,
-        },
-      });
+      if (channelInfo) {
+        await db.channel.update({
+          where: { id: channel.id },
+          data: {
+            youtubeChannelId: channelInfo.id,
+            youtubeChannelName: channelInfo.title,
+          },
+        });
+      }
     } catch (infoErr: any) {
       console.warn("Could not fetch channel info:", infoErr.message);
     }
