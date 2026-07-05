@@ -199,11 +199,16 @@ export async function startFFmpegStream(opts: FFmpegOptions): Promise<{
   // Ensure log directory exists
   await fs.mkdir(STREAM_LOG_DIR, { recursive: true });
 
-  // Use timestamp only for the log file name — the FFmpeg PID isn't
-  // known until after spawn, and process.pid here refers to the Next.js
-  // process, not FFmpeg. The logFile path is stored in the DB anyway.
+  // Use timestamp + random suffix for the log file name. Previously this
+  // used only a millisecond-precision timestamp — two streams starting in
+  // the same millisecond (e.g. batch start, or scheduler + manual start
+  // coinciding) would collide on the same log file path. The second
+  // `fs.open(logFile, "w")` would truncate the first stream's log, and
+  // both streams' DB records would point to the same file. The random
+  // suffix makes collisions astronomically unlikely.
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const logFile = path.join(STREAM_LOG_DIR, `stream_${timestamp}.log`);
+  const randomSuffix = Math.random().toString(36).slice(2, 10);
+  const logFile = path.join(STREAM_LOG_DIR, `stream_${timestamp}_${randomSuffix}.log`);
   const logHandle = await fs.open(logFile, "w");
 
   // If multiple video files, build a concat list file (temp, auto-cleaned)
@@ -255,25 +260,46 @@ export async function startFFmpegStream(opts: FFmpegOptions): Promise<{
   return { pid: proc.pid, logFile, process: proc };
 }
 
-// Stop an FFmpeg process by PID
+// Stop an FFmpeg process by PID.
+// Returns a Promise that resolves to true once the process has actually
+// exited (or after a 3s timeout if it refuses to die). Previously this
+// returned immediately after sending SIGTERM — callers would proceed to
+// YouTube's "complete" transition while FFmpeg was still actively pushing
+// video, causing YouTube to reject the transition and waste API quota
+// on retries.
 export async function stopFFmpegStream(pid: number): Promise<boolean> {
   try {
+    // Check if the process is still alive before signaling
+    if (!isProcessRunning(pid)) {
+      return true;
+    }
+
     process.kill(pid, "SIGTERM");
-    // Wait 2 seconds, then SIGKILL IF still alive. Previously this fired
-    // SIGKILL unconditionally after 2s — if the process had already
-    // exited (and the OS reused the PID for something else), we'd kill
-    // the wrong process. The isProcessRunning check guards against that.
-    setTimeout(() => {
-      if (isProcessRunning(pid)) {
-        try {
-          process.kill(pid, "SIGKILL");
-        } catch {
-          // Already dead
-        }
+
+    // Wait for the process to actually exit, with a 3s timeout.
+    // Poll every 100ms — cheap and responsive.
+    const startTime = Date.now();
+    const TIMEOUT_MS = 3000;
+    while (Date.now() - startTime < TIMEOUT_MS) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (!isProcessRunning(pid)) {
+        return true;
       }
-    }, 2000);
+    }
+
+    // Process is still alive after 3s — escalate to SIGKILL.
+    // Re-check isProcessRunning first to avoid killing a PID that was
+    // reused by another process between our last poll and now.
+    if (isProcessRunning(pid)) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Already dead — fine
+      }
+    }
     return true;
   } catch {
+    // ESRCH = process doesn't exist; treat as success
     return false;
   }
 }

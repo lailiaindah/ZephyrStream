@@ -28,6 +28,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: passwordCheck.message }, { status: 400 });
     }
 
+    // Trim+lowercase email — mobile keyboards and browser autofill
+    // sometimes add trailing whitespace, which would cause a silent
+    // mismatch on future signins (signin trims, but stored email didn't).
+    const normalizedEmail = String(email).trim().toLowerCase();
+
     // Create the new user. We rely on the unique constraint on `email`
     // to handle the race condition where two concurrent signups submit
     // the same email — both pass the existence check, but only one
@@ -38,8 +43,8 @@ export async function POST(req: NextRequest) {
     try {
       user = await db.user.create({
         data: {
-          email: email.toLowerCase(),
-          name: name || email.split("@")[0],
+          email: normalizedEmail,
+          name: (typeof name === "string" ? name.trim() : "") || normalizedEmail.split("@")[0],
           passwordHash,
           role: "user",
         },

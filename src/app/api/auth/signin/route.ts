@@ -15,8 +15,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Trim+lowercase email — mobile keyboards and browser autofill
+    // sometimes add trailing whitespace, which would cause a silent
+    // mismatch against the stored (already-trimmed) email.
+    const normalizedEmail = String(email).trim().toLowerCase();
+
     const user = await db.user.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: normalizedEmail },
     });
 
     if (!user) {

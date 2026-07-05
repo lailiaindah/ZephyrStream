@@ -549,12 +549,18 @@ export async function getNextThumbnail(
     idx = Math.floor(Math.random() * thumbnails.length);
   } else {
     idx = channel.thumbnailRotatorIndex % thumbnails.length;
-    await db.channel.update({
-      where: { id: channelId },
-      data: { thumbnailRotatorIndex: idx + 1 },
-    });
   }
   const thumb = thumbnails[idx];
+
+  // Increment the rotator index OUTSIDE the if/else — mirrors the
+  // getNextTitle structure. Previously this was only incremented in
+  // the non-shuffle branch, so switching shuffleThumbnail from true to
+  // false would restart the rotator from a stale index (repeating
+  // thumbnails that were already used while shuffle was on).
+  await db.channel.update({
+    where: { id: channelId },
+    data: { thumbnailRotatorIndex: idx + 1 },
+  });
 
   return {
     id: thumb.id,

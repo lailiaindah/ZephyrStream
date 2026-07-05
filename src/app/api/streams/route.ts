@@ -112,6 +112,39 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // SECURITY: Validate that sourceFileIds and playlistSourceIds belong
+    // to the calling user. Without this, a user could create a stream
+    // with another user's file IDs and have FFmpeg stream the victim's
+    // videos when the stream starts.
+    if (Array.isArray(sourceFileIds) && sourceFileIds.length > 0) {
+      const ownedFiles = await db.uploadedFile.findMany({
+        where: { id: { in: sourceFileIds }, userId: user.id },
+        select: { id: true },
+      });
+      const ownedFileIds = new Set(ownedFiles.map((f) => f.id));
+      const unowned = sourceFileIds.filter((id: string) => !ownedFileIds.has(id));
+      if (unowned.length > 0) {
+        return NextResponse.json(
+          { error: `You don't own ${unowned.length} of the selected file(s)` },
+          { status: 403 }
+        );
+      }
+    }
+    if (Array.isArray(playlistSourceIds) && playlistSourceIds.length > 0) {
+      const ownedPlaylists = await db.playlist.findMany({
+        where: { id: { in: playlistSourceIds }, userId: user.id },
+        select: { id: true },
+      });
+      const ownedPlaylistIds = new Set(ownedPlaylists.map((p) => p.id));
+      const unowned = playlistSourceIds.filter((id: string) => !ownedPlaylistIds.has(id));
+      if (unowned.length > 0) {
+        return NextResponse.json(
+          { error: `You don't own ${unowned.length} of the selected playlist(s)` },
+          { status: 403 }
+        );
+      }
+    }
+
     // SECURITY: Validate sourcePath to prevent path traversal. Without
     // this, a user could set sourcePath to /etc or /proc and have
     // FFmpeg stream arbitrary system files to YouTube.
@@ -130,12 +163,21 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Validate duration: minHours must be <= maxHours
+    // Validate duration: minHours must be <= maxHours, and both must be
+    // at least 0.25 (15 minutes). minHours=0 causes FFmpeg to exit almost
+    // immediately (durationSeconds near 0), triggering the auto-retry
+    // loop and burning through all 3 retries in seconds.
     const effectiveMinHours = minHours ?? source?.minHours ?? 2.0;
     const effectiveMaxHours = maxHours ?? source?.maxHours ?? 4.0;
     if (Number(effectiveMinHours) > Number(effectiveMaxHours)) {
       return NextResponse.json(
         { error: "Minimum duration cannot be greater than maximum duration" },
+        { status: 400 }
+      );
+    }
+    if (Number(effectiveMinHours) < 0.25) {
+      return NextResponse.json(
+        { error: "Minimum duration must be at least 0.25 hours (15 minutes)" },
         { status: 400 }
       );
     }

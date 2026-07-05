@@ -117,6 +117,21 @@ export async function requireAuth() {
   return user;
 }
 
+// Require the current user to have the "admin" role. Used by system
+// endpoints (cleanup, backup, speed-test, etc.) that affect the whole
+// server — regular users shouldn't be able to trigger backups, force
+// cleanup cycles, or run bandwidth-burning speed tests.
+export async function requireAdmin() {
+  const user = await getCurrentUser();
+  if (!user) {
+    throw new Error("UNAUTHORIZED");
+  }
+  if (user.role !== "admin") {
+    throw new Error("FORBIDDEN");
+  }
+  return user;
+}
+
 // Validate email format
 export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);

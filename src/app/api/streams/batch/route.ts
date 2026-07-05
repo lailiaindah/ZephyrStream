@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { stopFFmpegStream } from "@/lib/ffmpeg";
 import { transitionBroadcast } from "@/lib/youtube";
+import { createNextDaySchedule } from "@/lib/scheduler";
 
 export async function POST(req: NextRequest) {
   try {
@@ -66,6 +67,27 @@ export async function POST(req: NextRequest) {
             }
           }
           await db.stream.update({ where: { id }, data: { status: "ended", endedAt: new Date(), pid: null } });
+
+          // If autoCreateSchedule is on, create the next-day schedule —
+          // same behavior as the single-stream stop endpoint. Without
+          // this, batch-stopping streams with autoCreateSchedule=true
+          // would silently break the daily auto-streaming chain.
+          if (stream.autoCreateSchedule) {
+            try {
+              await createNextDaySchedule(stream);
+            } catch (schedErr: any) {
+              await db.activityLog.create({
+                data: {
+                  userId: user.id,
+                  level: "warn",
+                  category: "stream",
+                  message: `Batch stop: next-day schedule failed for ${stream.name}`,
+                  details: schedErr.message,
+                },
+              }).catch(() => {});
+            }
+          }
+
           results.push({ id, success: true, action: "stopped" });
         }
         else if (action === "start") {

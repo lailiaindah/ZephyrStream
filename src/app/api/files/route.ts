@@ -5,6 +5,53 @@ import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import fs from "fs/promises";
 
+/**
+ * Remove a deleted file's ID from any stream's sourceFileIds JSON array.
+ * Without this, streams that referenced the deleted file would silently
+ * stream fewer videos than the user configured (or fail with "No video
+ * files found" if all referenced files are deleted).
+ *
+ * We also remove it from any PlaylistItem rows so playlists don't show
+ * "ghost" entries.
+ */
+async function cleanupFileReferences(fileId: string, userId: string) {
+  // Find all streams owned by this user that have a sourceFileIds JSON
+  // containing the deleted fileId. We can't filter inside JSON in Prisma
+  // (SQLite doesn't support JSON path queries), so we fetch all streams
+  // for the user and filter in JS — fine for typical deployments.
+  const streams = await db.stream.findMany({
+    where: { userId, sourceFileIds: { not: null } },
+    select: { id: true, sourceFileIds: true },
+  });
+
+  for (const s of streams) {
+    if (!s.sourceFileIds) continue;
+    try {
+      const ids: string[] = JSON.parse(s.sourceFileIds);
+      if (ids.includes(fileId)) {
+        const newIds = ids.filter((id) => id !== fileId);
+        await db.stream.update({
+          where: { id: s.id },
+          data: {
+            sourceFileIds: newIds.length > 0 ? JSON.stringify(newIds) : null,
+          },
+        });
+      }
+    } catch {
+      // Malformed JSON — leave it alone
+    }
+  }
+
+  // Also remove the file from any PlaylistItem rows that reference it.
+  // The schema has onDelete: Cascade on PlaylistItem.file, so Prisma
+  // already deletes the items — but only if the FK is enforced. On
+  // SQLite with Prisma, this depends on referential integrity being
+  // enabled. We do it explicitly to be safe.
+  await db.playlistItem.deleteMany({
+    where: { fileId },
+  }).catch(() => {});
+}
+
 export async function GET(req: NextRequest) {
   try {
     const user = await getCurrentUser();
@@ -84,6 +131,12 @@ export async function DELETE(req: NextRequest) {
 
       const result = await db.uploadedFile.deleteMany({ where });
 
+      // Clean up references to the deleted files in streams' sourceFileIds
+      // and in PlaylistItem rows.
+      for (const f of files) {
+        await cleanupFileReferences(f.id, user.id);
+      }
+
       await db.activityLog.create({
         data: {
           userId: user.id,
@@ -117,6 +170,11 @@ export async function DELETE(req: NextRequest) {
     }
 
     await db.uploadedFile.delete({ where: { id: fileId } });
+
+    // Clean up references to this file in streams' sourceFileIds JSON
+    // arrays and in PlaylistItem rows. Without this, streams would
+    // silently stream fewer videos (or fail to start) after a file delete.
+    await cleanupFileReferences(fileId, user.id);
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

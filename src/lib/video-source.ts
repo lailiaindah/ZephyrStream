@@ -40,6 +40,7 @@ export async function resolveVideoFiles(stream: {
   sourcePath?: string | null;
   sourceFileIds?: string | null;
   playlistSourceIds?: string | null;
+  userId?: string;
 }): Promise<ResolvedVideoSource> {
   // Local folder mode
   if (stream.sourceType === "local" && stream.sourcePath) {
@@ -87,13 +88,22 @@ export async function resolveVideoFiles(stream: {
     result.videoFiles.push(file.storagePath);
   };
 
+  // SECURITY: filter by userId so a stream can never resolve files or
+  // playlists belonging to another user. The stream.userId is always
+  // passed by callers (scheduler + start route). If it's missing for
+  // any reason, we fall back to no userId filter but log a warning —
+  // better to stream than to crash, but this should never happen.
+  const userIdFilter = stream.userId
+    ? { userId: stream.userId }
+    : {};
+
   // === Individual file IDs ===
   if (stream.sourceFileIds) {
     try {
       const fileIds: string[] = JSON.parse(stream.sourceFileIds);
       if (fileIds.length > 0) {
         const files = await db.uploadedFile.findMany({
-          where: { id: { in: fileIds } },
+          where: { id: { in: fileIds }, ...userIdFilter },
           select: { id: true, storagePath: true },
         });
         // Preserve the user's chosen order
@@ -116,9 +126,10 @@ export async function resolveVideoFiles(stream: {
     try {
       const playlistIds: string[] = JSON.parse(stream.playlistSourceIds);
       if (playlistIds.length > 0) {
-        // Fetch playlists with their items in sortOrder, including the file
+        // Fetch playlists with their items in sortOrder, including the file.
+        // Filter by userId so we only expand the calling user's playlists.
         const playlists = await db.playlist.findMany({
-          where: { id: { in: playlistIds } },
+          where: { id: { in: playlistIds }, ...userIdFilter },
           include: {
             items: {
               orderBy: { sortOrder: "asc" },

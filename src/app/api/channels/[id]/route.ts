@@ -66,6 +66,17 @@ export async function PATCH(
       return NextResponse.json({ error: "Channel not found" }, { status: 404 });
     }
 
+    // SECURITY: Don't allow setting status to "active" if the channel has
+    // no OAuth tokens. Otherwise the scheduler would try to create a
+    // broadcast, fail (no refresh token), and FFmpeg would push to YouTube
+    // with no broadcast metadata (untitled stream in YouTube Studio).
+    if (status === "active" && !channel.refreshToken && !channel.accessToken) {
+      return NextResponse.json(
+        { error: "Cannot set status to 'active' — channel is not connected to YouTube. Authorize it first." },
+        { status: 400 }
+      );
+    }
+
     const updated = await db.channel.update({
       where: { id },
       data: {
@@ -103,7 +114,7 @@ export async function DELETE(
     // thumbnails, playlists, streams), collect the physical file paths
     // so we can delete them from disk too. Otherwise disk fills up with
     // orphaned files belonging to deleted channels.
-    const [filesToDelete, thumbnailsToDelete] = await Promise.all([
+    const [filesToDelete, thumbnailsToDelete, liveStreams] = await Promise.all([
       db.uploadedFile.findMany({
         where: { channelId: id },
         select: { storagePath: true },
@@ -112,12 +123,41 @@ export async function DELETE(
         where: { channelId: id },
         select: { storagePath: true },
       }),
+      // Find any live/preparing streams on this channel so we can stop
+      // their FFmpeg processes BEFORE deleting the channel. Otherwise the
+      // streams survive (schema uses SetNull) with a running PID, FFmpeg
+      // keeps pushing to YouTube, and the scheduler can't easily stop
+      // them (the channel's OAuth tokens are gone).
+      db.stream.findMany({
+        where: { channelId: id, status: { in: ["live", "preparing", "stopping"] } },
+        select: { id: true, pid: true, name: true },
+      }),
     ]);
 
     const physicalPaths = [
       ...filesToDelete.map((f) => f.storagePath),
       ...thumbnailsToDelete.map((t) => t.storagePath),
     ].filter(Boolean) as string[];
+
+    // Stop any running FFmpeg processes for streams on this channel.
+    // Mark the streams as "ended" so the scheduler's ghost cleanup
+    // doesn't try to restart them.
+    if (liveStreams.length > 0) {
+      const { stopFFmpegStream } = await import("@/lib/ffmpeg");
+      for (const s of liveStreams) {
+        if (s.pid) {
+          try {
+            await stopFFmpegStream(s.pid);
+          } catch (err) {
+            console.warn(`[Channel Delete] Failed to stop FFmpeg for stream ${s.id}:`, err);
+          }
+        }
+        await db.stream.update({
+          where: { id: s.id },
+          data: { status: "ended", endedAt: new Date(), pid: null },
+        }).catch(() => {});
+      }
+    }
 
     // Delete the channel row (cascades to all related DB rows)
     await db.channel.delete({ where: { id } });

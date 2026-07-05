@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { deleteBackup } from "@/lib/backup";
+import { canAccessSystemEndpoints } from "@/lib/access-control";
 
 export async function DELETE(
   _req: NextRequest,
@@ -10,6 +11,10 @@ export async function DELETE(
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    if (!(await canAccessSystemEndpoints(user.role))) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
 
     const { filename } = await params;
 

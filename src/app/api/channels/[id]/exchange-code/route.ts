@@ -1,7 +1,7 @@
 // POST /api/channels/[id]/exchange-code — Exchange OAuth code for tokens
 // Accepts either { code: "..." } or { redirectUrl: "http://localhost:3000/..." }
 // The redirectUrl approach lets users paste the full URL from browser address bar
-// after Google redirects (works without domain — uses localhost redirect URI).
+// after Google redirects (works without domain — uses request origin as redirect URI).
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -47,8 +47,12 @@ export async function POST(
       );
     }
 
-    // The redirect URI must match what was used in getAuthUrl
-    const redirectUri = "http://localhost:3000/api/channels/oauth-callback";
+    // The redirect URI must match what was used in getAuthUrl. Derive it
+    // from the request's own origin so it works for VPS IP / domain access
+    // (previously hardcoded to localhost:3000, which only worked when the
+    // user accessed the app from the VPS itself).
+    const origin = new URL(req.url).origin;
+    const redirectUri = `${origin}/api/channels/oauth-callback`;
 
     const tokens = await exchangeCodeForTokens(
       channel.clientId,

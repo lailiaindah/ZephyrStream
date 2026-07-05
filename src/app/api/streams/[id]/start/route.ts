@@ -60,8 +60,18 @@ export async function POST(
       );
     }
 
-    // Resolve video files (combines individual files + playlist expansion)
-    const resolved = await resolveVideoFiles(stream);
+    // Resolve video files (combines individual files + playlist expansion).
+    // Pass userId so resolveVideoFiles can filter out any file/playlist IDs
+    // that don't belong to this user (defense in depth — the PATCH endpoint
+    // also validates ownership, but this prevents an attacker who somehow
+    // got sourceFileIds set to another user's IDs from streaming them).
+    const resolved = await resolveVideoFiles({
+      sourceType: stream.sourceType,
+      sourcePath: stream.sourcePath,
+      sourceFileIds: stream.sourceFileIds,
+      playlistSourceIds: stream.playlistSourceIds,
+      userId: stream.userId,
+    });
     const videoFiles = resolved.videoFiles;
 
     if (videoFiles.length === 0) {
@@ -179,39 +189,72 @@ export async function POST(
       }
     }
 
-    // Start FFmpeg — uses the YouTube stream key (NOT the API)
-    // Randomize the stream duration between minHours and maxHours
+    // Start FFmpeg — uses the YouTube stream key (NOT the API).
+    // Randomize the stream duration between minHours and maxHours.
+    // Clamp to at least 60s to prevent flapping when minHours is very small.
     const minSec = stream.minHours * 3600;
     const maxSec = stream.maxHours * 3600;
-    const randomDurationSec = Math.round(minSec + Math.random() * (maxSec - minSec));
+    const rawDuration = Math.round(minSec + Math.random() * (maxSec - minSec));
+    const randomDurationSec = Math.max(60, rawDuration);
 
-    const { pid, logFile } = await startFFmpegStream({
-      streamKey: stream.streamKey,
-      rtmpUrl: stream.rtmpUrl,
-      videoFiles,
-      encoder: stream.encoder,
-      copyMode: stream.copyMode,
-      videoBitrate: stream.videoBitrate,
-      audioBitrate: stream.audioBitrate,
-      resolution: stream.resolution,
-      fps: stream.fps,
-      preset: stream.preset,
-      durationSeconds: randomDurationSec,
-      logFile: undefined, // Let FFmpeg manager create one
-    });
+    // Track the spawned PID so the catch block can clean it up if the
+    // subsequent DB update fails. Without this, a DB error after a
+    // successful FFmpeg spawn would leave an untracked FFmpeg process
+    // pushing to YouTube with no way for the user to stop it.
+    let spawnedPid: number | null = null;
+    let spawnedLogFile: string | null = null;
+    let pid: number;
+    let logFile: string;
+    try {
+      const result = await startFFmpegStream({
+        streamKey: stream.streamKey,
+        rtmpUrl: stream.rtmpUrl,
+        videoFiles,
+        encoder: stream.encoder,
+        copyMode: stream.copyMode,
+        videoBitrate: stream.videoBitrate,
+        audioBitrate: stream.audioBitrate,
+        resolution: stream.resolution,
+        fps: stream.fps,
+        preset: stream.preset,
+        durationSeconds: randomDurationSec,
+        logFile: undefined, // Let FFmpeg manager create one
+      });
+      pid = result.pid;
+      logFile = result.logFile;
+      spawnedPid = pid;
+      spawnedLogFile = logFile;
+    } catch (ffmpegErr: any) {
+      // FFmpeg spawn itself failed — no process to clean up.
+      throw ffmpegErr;
+    }
 
-    await db.stream.update({
-      where: { id: stream.id },
-      data: {
-        status: "live",
-        pid,
-        logFile,
-        startedAt: new Date(),
-        endedAt: null,
-        lastError: null,
-        retryCount: 0, // Reset retry count on manual start
-      },
-    });
+    try {
+      await db.stream.update({
+        where: { id: stream.id },
+        data: {
+          status: "live",
+          pid,
+          logFile,
+          startedAt: new Date(),
+          endedAt: null,
+          lastError: null,
+          retryCount: 0, // Reset retry count on manual start
+        },
+      });
+    } catch (dbErr: any) {
+      // DB update failed AFTER FFmpeg was already spawned. Kill the
+      // orphaned process so it doesn't keep pushing to YouTube with no
+      // DB tracking. The user can't stop it via the UI (status is
+      // stuck in "preparing"), so we have to clean up here.
+      if (spawnedPid) {
+        try {
+          const { stopFFmpegStream } = await import("@/lib/ffmpeg");
+          await stopFFmpegStream(spawnedPid);
+        } catch {}
+      }
+      throw dbErr;
+    }
 
     await db.activityLog.create({
       data: {

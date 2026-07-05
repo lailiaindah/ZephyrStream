@@ -50,31 +50,60 @@ export async function POST(req: NextRequest) {
     const safeName = `${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const localPath = path.join(uploadDir, safeName);
 
-    // Download the file from Google Drive
-    const { size, mimeType } = await downloadDriveFile(
-      fileId,
-      localPath,
-      channel.accessToken,
-      channel.refreshToken || undefined,
-      channel.clientId,
-      channel.clientSecret
-    );
+    // Download the file from Google Drive.
+    // If the download fails (network error, Drive quota, disk full), the
+    // pipeline leaves a partial file on disk. We catch that case and
+    // delete the partial file before returning the error — otherwise
+    // repeated failed imports accumulate orphan files forever.
+    let size: number;
+    let mimeType: string;
+    try {
+      const result = await downloadDriveFile(
+        fileId,
+        localPath,
+        channel.accessToken,
+        channel.refreshToken || undefined,
+        channel.clientId,
+        channel.clientSecret
+      );
+      size = result.size;
+      mimeType = result.mimeType;
+    } catch (dlErr: any) {
+      // Clean up partial download
+      await fs.unlink(localPath).catch(() => {});
+      console.error("Google Drive download error:", dlErr);
+      return NextResponse.json(
+        { error: `Failed to download from Google Drive: ${dlErr.message}` },
+        { status: 500 }
+      );
+    }
 
-    // Create database record (file is automatically assigned to this channel)
-    const record = await db.uploadedFile.create({
-      data: {
-        userId: user.id,
-        channelId, // File is scoped to this channel
-        name: safeName,
-        originalName: fileName,
-        mimeType,
-        size,
-        storageType: "gdrive",
-        storagePath: localPath,
-        gdriveFileId: fileId,
-        status: "ready",
-      },
-    });
+    // Create database record (file is automatically assigned to this channel).
+    // If the DB insert fails, clean up the downloaded file too.
+    let record;
+    try {
+      record = await db.uploadedFile.create({
+        data: {
+          userId: user.id,
+          channelId, // File is scoped to this channel
+          name: safeName,
+          originalName: fileName,
+          mimeType,
+          size,
+          storageType: "gdrive",
+          storagePath: localPath,
+          gdriveFileId: fileId,
+          status: "ready",
+        },
+      });
+    } catch (dbErr: any) {
+      await fs.unlink(localPath).catch(() => {});
+      console.error("Google Drive import DB error:", dbErr);
+      return NextResponse.json(
+        { error: "Failed to save imported file to database" },
+        { status: 500 }
+      );
+    }
 
     await db.activityLog.create({
       data: {

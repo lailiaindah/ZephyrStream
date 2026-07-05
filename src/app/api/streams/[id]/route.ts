@@ -86,6 +86,12 @@ export async function PATCH(
           { status: 400 }
         );
       }
+      if (Number(minH) < 0.25) {
+        return NextResponse.json(
+          { error: "Minimum duration must be at least 0.25 hours (15 minutes)" },
+          { status: 400 }
+        );
+      }
     }
 
     const updateData: any = {};
@@ -103,6 +109,53 @@ export async function PATCH(
         } else {
           updateData[field] = body[field];
         }
+      }
+    }
+
+    // SECURITY: Validate channel ownership if channelId is being changed.
+    // Previously PATCH allowed setting channelId to ANY channel — including
+    // another user's channel. At stream start, getValidAccessToken would
+    // happily return the victim's channel with its OAuth tokens, and
+    // createOrUpdateBroadcast would create a broadcast under the victim's
+    // YouTube account while FFmpeg pushed video to the victim's stream key.
+    if (body.channelId !== undefined && body.channelId) {
+      const targetChannel = await db.channel.findFirst({
+        where: { id: body.channelId, userId: user.id },
+      });
+      if (!targetChannel) {
+        return NextResponse.json({ error: "Channel not found" }, { status: 404 });
+      }
+    }
+
+    // SECURITY: Validate that sourceFileIds and playlistSourceIds belong
+    // to the calling user. Without this, a user could set sourceFileIds to
+    // another user's file IDs and have FFmpeg stream the victim's videos.
+    if (body.sourceFileIds !== undefined && Array.isArray(body.sourceFileIds) && body.sourceFileIds.length > 0) {
+      const ownedFiles = await db.uploadedFile.findMany({
+        where: { id: { in: body.sourceFileIds }, userId: user.id },
+        select: { id: true },
+      });
+      const ownedFileIds = new Set(ownedFiles.map((f) => f.id));
+      const unowned = body.sourceFileIds.filter((id: string) => !ownedFileIds.has(id));
+      if (unowned.length > 0) {
+        return NextResponse.json(
+          { error: `You don't own ${unowned.length} of the selected file(s)` },
+          { status: 403 }
+        );
+      }
+    }
+    if (body.playlistSourceIds !== undefined && Array.isArray(body.playlistSourceIds) && body.playlistSourceIds.length > 0) {
+      const ownedPlaylists = await db.playlist.findMany({
+        where: { id: { in: body.playlistSourceIds }, userId: user.id },
+        select: { id: true },
+      });
+      const ownedPlaylistIds = new Set(ownedPlaylists.map((p) => p.id));
+      const unowned = body.playlistSourceIds.filter((id: string) => !ownedPlaylistIds.has(id));
+      if (unowned.length > 0) {
+        return NextResponse.json(
+          { error: `You don't own ${unowned.length} of the selected playlist(s)` },
+          { status: 403 }
+        );
       }
     }
 
