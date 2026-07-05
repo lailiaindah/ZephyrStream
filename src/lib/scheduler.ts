@@ -597,6 +597,8 @@ export async function createNextDaySchedule(stream: any) {
         maxHours: stream.maxHours,
         startAt: nextStartAt,
         autoCreateSchedule: stream.autoCreateSchedule,
+        shuffleTitle: stream.shuffleTitle,
+        shuffleThumbnail: stream.shuffleThumbnail,
         encoder: stream.encoder,
         copyMode: stream.copyMode,
         videoBitrate: stream.videoBitrate,
@@ -628,7 +630,9 @@ export async function createNextDaySchedule(stream: any) {
         const picked = await pickTitleAndThumbnail(
           newStream.channelId,
           effectiveSpinnerMode,
-          effectiveSpinnerEmojis
+          effectiveSpinnerEmojis,
+          newStream.shuffleTitle || false,
+          newStream.shuffleThumbnail || false
         );
         await db.stream.update({
           where: { id: newStream.id },

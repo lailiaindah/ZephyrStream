@@ -1,6 +1,6 @@
 # ZephyrStream — Multi-Channel YouTube Live Streaming Platform
 
-**v1.4.4** — A self-hosted automated live streaming scheduler for YouTube, built with Next.js 16, TypeScript, Prisma, and FFmpeg. Designed to be installed on a VPS and managed from any browser.
+**v1.5.0** — A self-hosted automated live streaming scheduler for YouTube, built with Next.js 16, TypeScript, Prisma, and FFmpeg. Designed to be installed on a VPS and managed from any browser.
 
 > **Inspired by** the original *Zephyr Streamer* desktop app (PyQt6 + FFmpeg), this is a complete web reimplementation with a fresh design, new architecture, and many new features — built from scratch as a brand-new application.
 
@@ -497,4 +497,4 @@ Personal use. Inspired by the original Zephyr Streamer (PyQt6), reimplemented fr
 
 ---
 
-**ZephyrStream v1.4.4** — Built with ❤️ for the streaming community.
+**ZephyrStream v1.5.0** — Built with ❤️ for the streaming community.

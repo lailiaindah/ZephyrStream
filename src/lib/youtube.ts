@@ -473,17 +473,16 @@ export async function listBroadcasts(channelId: string) {
 // ============================================================
 
 // Get the next title for a channel using the rotator index.
-// Returns the title string (with spinner emoji applied if enabled),
-// or null if the channel has no titles.
+// If shuffle=true, picks a RANDOM title instead of sequential.
 export async function getNextTitle(
   channelId: string,
   spinnerMode: string,
-  spinnerEmojis: string[]
+  spinnerEmojis: string[],
+  shuffle: boolean = false
 ): Promise<string | null> {
   const channel = await db.channel.findUnique({ where: { id: channelId } });
   if (!channel) return null;
 
-  // Fetch all enabled titles, ordered by sortOrder
   const titles = await db.titleItem.findMany({
     where: { channelId, enabled: true },
     orderBy: { sortOrder: "asc" },
@@ -491,8 +490,18 @@ export async function getNextTitle(
 
   if (titles.length === 0) return null;
 
-  // Use the rotator index (modulo length to wrap around)
-  const idx = channel.titleRotatorIndex % titles.length;
+  // Pick title: random or sequential
+  let idx: number;
+  if (shuffle) {
+    idx = Math.floor(Math.random() * titles.length);
+  } else {
+    idx = channel.titleRotatorIndex % titles.length;
+    // Increment rotator for next time (only in sequential mode)
+    await db.channel.update({
+      where: { id: channelId },
+      data: { titleRotatorIndex: idx + 1 },
+    });
+  }
   const titleItem = titles[idx];
 
   // Build the final title with optional emoji
@@ -522,12 +531,11 @@ export async function getNextTitle(
 }
 
 // Get the next thumbnail for a channel using the rotator index.
-// Returns the ThumbnailItem record (with storagePath), or null if none.
-export async function getNextThumbnail(channelId: string): Promise<{
-  id: string;
-  storagePath: string;
-  mimeType: string;
-} | null> {
+// If shuffle=true, picks a RANDOM thumbnail instead of sequential.
+export async function getNextThumbnail(
+  channelId: string,
+  shuffle: boolean = false
+): Promise<{ id: string; storagePath: string; mimeType: string } | null> {
   const channel = await db.channel.findUnique({ where: { id: channelId } });
   if (!channel) return null;
 
@@ -538,14 +546,17 @@ export async function getNextThumbnail(channelId: string): Promise<{
 
   if (thumbnails.length === 0) return null;
 
-  const idx = channel.thumbnailRotatorIndex % thumbnails.length;
+  let idx: number;
+  if (shuffle) {
+    idx = Math.floor(Math.random() * thumbnails.length);
+  } else {
+    idx = channel.thumbnailRotatorIndex % thumbnails.length;
+    await db.channel.update({
+      where: { id: channelId },
+      data: { thumbnailRotatorIndex: idx + 1 },
+    });
+  }
   const thumb = thumbnails[idx];
-
-  // Increment rotator index
-  await db.channel.update({
-    where: { id: channelId },
-    data: { thumbnailRotatorIndex: idx + 1 },
-  });
 
   return {
     id: thumb.id,
@@ -633,7 +644,9 @@ export interface PickedTitleThumbnail {
 export async function pickTitleAndThumbnail(
   channelId: string,
   spinnerMode: string,
-  spinnerEmojis: string[]
+  spinnerEmojis: string[],
+  shuffleTitle: boolean = false,
+  shuffleThumbnail: boolean = false
 ): Promise<PickedTitleThumbnail> {
   const result: PickedTitleThumbnail = {
     resolvedTitle: null,
@@ -642,17 +655,17 @@ export async function pickTitleAndThumbnail(
     resolvedThumbnailId: null,
   };
 
-  // Pick title (advances titleRotatorIndex)
+  // Pick title (random or sequential)
   try {
-    const title = await getNextTitle(channelId, spinnerMode, spinnerEmojis);
+    const title = await getNextTitle(channelId, spinnerMode, spinnerEmojis, shuffleTitle);
     result.resolvedTitle = title;
   } catch (err: any) {
     console.warn("[Rotator] pickTitleAndThumbnail: title pick failed:", err.message);
   }
 
-  // Pick thumbnail (advances thumbnailRotatorIndex)
+  // Pick thumbnail (random or sequential)
   try {
-    const thumb = await getNextThumbnail(channelId);
+    const thumb = await getNextThumbnail(channelId, shuffleThumbnail);
     if (thumb) {
       result.resolvedThumbnailPath = thumb.storagePath;
       result.resolvedThumbnailMime = thumb.mimeType;

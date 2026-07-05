@@ -73,6 +73,8 @@ function StreamFormInner({
   const [autoCreateSchedule, setAutoCreateSchedule] = useState(
     editingStream?.autoCreateSchedule ?? false
   );
+  const [shuffleTitle, setShuffleTitle] = useState(editingStream?.shuffleTitle ?? false);
+  const [shuffleThumbnail, setShuffleThumbnail] = useState(editingStream?.shuffleThumbnail ?? false);
   const [encoder, setEncoder] = useState(editingStream?.encoder || "auto");
   const [copyMode, setCopyMode] = useState(editingStream?.copyMode || false);
   const [videoBitrate, setVideoBitrate] = useState(editingStream?.videoBitrate || "4500k");
@@ -108,6 +110,8 @@ function StreamFormInner({
       maxHours: Number(maxHours),
       startAt: startAt ? new Date(startAt).toISOString() : null,
       autoCreateSchedule,
+      shuffleTitle,
+      shuffleThumbnail,
       encoder,
       copyMode,
       videoBitrate,
@@ -163,6 +167,8 @@ function StreamFormInner({
           minHours, maxHours, spinnerMode,
           spinnerEmojis: selectedEmojis,
           autoCreateSchedule,
+          shuffleTitle,
+          shuffleThumbnail,
         }),
       });
       const data = await res.json();
@@ -196,6 +202,8 @@ function StreamFormInner({
     setSpinnerMode(t.spinnerMode || "off");
     setSelectedEmojis(t.spinnerEmojis ? JSON.parse(t.spinnerEmojis) : []);
     setAutoCreateSchedule(t.autoCreateSchedule ?? false);
+    setShuffleTitle(t.shuffleTitle ?? false);
+    setShuffleThumbnail(t.shuffleThumbnail ?? false);
     toast.success(`Loaded template: ${t.name}`);
   };
 
@@ -425,6 +433,32 @@ function StreamFormInner({
                     </div>
                   </div>
                   <Switch checked={autoCreateSchedule} onCheckedChange={setAutoCreateSchedule} />
+                </div>
+
+                <div className="flex items-center justify-between rounded-md bg-slate-900/60 border border-slate-800 p-2.5">
+                  <div className="flex items-center gap-2">
+                    <Shuffle className="h-4 w-4 text-cyan-300" />
+                    <div>
+                      <Label className="text-slate-200 cursor-pointer">Shuffle Title (Random Pick)</Label>
+                      <p className="text-[11px] text-slate-500">
+                        Pick a RANDOM title from the channel&apos;s title list each time a schedule is created (can repeat)
+                      </p>
+                    </div>
+                  </div>
+                  <Switch checked={shuffleTitle} onCheckedChange={setShuffleTitle} />
+                </div>
+
+                <div className="flex items-center justify-between rounded-md bg-slate-900/60 border border-slate-800 p-2.5">
+                  <div className="flex items-center gap-2">
+                    <Shuffle className="h-4 w-4 text-emerald-300" />
+                    <div>
+                      <Label className="text-slate-200 cursor-pointer">Shuffle Thumbnail (Random Pick)</Label>
+                      <p className="text-[11px] text-slate-500">
+                        Pick a RANDOM thumbnail from the channel&apos;s thumbnail list each time (can repeat)
+                      </p>
+                    </div>
+                  </div>
+                  <Switch checked={shuffleThumbnail} onCheckedChange={setShuffleThumbnail} />
                 </div>
               </div>
 

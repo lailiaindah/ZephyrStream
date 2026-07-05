@@ -75,6 +75,8 @@ export async function POST(req: NextRequest) {
       spinnerMode,
       spinnerEmojis,
       autoCreateSchedule,
+      shuffleTitle,
+      shuffleThumbnail,
       // Allow copy/duplicate flow to pass a source stream id
       duplicateFrom,
     } = body;
@@ -142,6 +144,8 @@ export async function POST(req: NextRequest) {
           ? (typeof spinnerEmojis === "string" ? spinnerEmojis : JSON.stringify(spinnerEmojis))
           : (source?.spinnerEmojis || null),
         autoCreateSchedule: autoCreateSchedule ?? source?.autoCreateSchedule ?? false,
+        shuffleTitle: shuffleTitle ?? source?.shuffleTitle ?? false,
+        shuffleThumbnail: shuffleThumbnail ?? source?.shuffleThumbnail ?? false,
         status: "scheduled",
       },
     });
@@ -161,7 +165,9 @@ export async function POST(req: NextRequest) {
         const picked = await pickTitleAndThumbnail(
           effectiveChannelId,
           effectiveSpinnerMode,
-          effectiveSpinnerEmojis
+          effectiveSpinnerEmojis,
+          stream.shuffleTitle || false,
+          stream.shuffleThumbnail || false
         );
         await db.stream.update({
           where: { id: stream.id },

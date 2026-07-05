@@ -305,6 +305,10 @@ model StreamTemplate {
   // Schedule settings
   autoCreateSchedule Boolean @default(false)
 
+  // Shuffle options (random pick at schedule creation)
+  shuffleTitle    Boolean  @default(false)
+  shuffleThumbnail Boolean @default(false)
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

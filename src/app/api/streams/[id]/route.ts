@@ -56,7 +56,7 @@ export async function PATCH(
       "startAt", "encoder", "copyMode", "videoBitrate", "audioBitrate",
       "resolution", "fps", "preset", "privacyStatus", "categoryId", "tags",
       "playlistId", "alteredContent", "spinnerMode", "spinnerEmojis",
-      "autoCreateSchedule", "status",
+      "autoCreateSchedule", "shuffleTitle", "shuffleThumbnail", "status",
     ];
 
     const updateData: any = {};
@@ -97,7 +97,9 @@ export async function PATCH(
         const picked = await pickTitleAndThumbnail(
           updated.channelId,
           effectiveSpinnerMode,
-          effectiveSpinnerEmojis
+          effectiveSpinnerEmojis,
+          updated.shuffleTitle || false,
+          updated.shuffleThumbnail || false
         );
         await db.stream.update({
           where: { id: updated.id },
