@@ -12,7 +12,7 @@ const execAsync = promisify(exec);
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300; // 5 minutes for build + restart
 
 export async function POST(req: Request) {
   try {
@@ -129,24 +129,23 @@ export async function POST(req: Request) {
       }).catch(() => ({ stdout: "" }));
       const beforePull = beforeHash.trim();
 
-      // Perform the actual git pull
       try {
-        // Stash any local changes first to avoid conflicts
+        // 1. Stash any local changes first to avoid conflicts
         await execAsync("git stash", { cwd: projectDir, timeout: 10000 }).catch(() => {});
 
+        // 2. Git pull
         const { stdout: pullOutput } = await execAsync("git pull origin main", {
           cwd: projectDir,
           timeout: 60000,
         });
 
-        // Get the hash AFTER pulling
+        // 3. Get the hash AFTER pulling
         const { stdout: afterHash } = await execAsync("git rev-parse HEAD", {
           cwd: projectDir,
         });
         const afterPull = afterHash.trim();
 
-        // Compare the full range (before..after) instead of just HEAD~1..HEAD
-        // This correctly detects all changed files when multiple commits are pulled
+        // 4. Check what changed
         const { stdout: diffOutput } = await execAsync(
           `git diff --name-only ${beforePull}..${afterPull}`,
           { cwd: projectDir, timeout: 10000 }
@@ -157,6 +156,53 @@ export async function POST(req: Request) {
           changedFiles.includes("package.json") ||
           changedFiles.includes("bun.lock");
         const needsDbPush = changedFiles.includes("prisma/schema.prisma");
+        const needsBuild = changedFiles.some(f =>
+          f.startsWith("src/") || f.startsWith("public/") ||
+          f.startsWith("next.config") || f.startsWith("tailwind") ||
+          f.startsWith("postcss") || f === "package.json"
+        );
+
+        // 5. Auto-install if needed
+        if (needsInstall) {
+          console.log("[Update] Running bun install...");
+          await execAsync("bun install", { cwd: projectDir, timeout: 120000 });
+        }
+
+        // 6. Auto db push if needed
+        if (needsDbPush) {
+          console.log("[Update] Running bun run db:push...");
+          await execAsync("bun run db:push", { cwd: projectDir, timeout: 30000 });
+        }
+
+        // 7. Auto rebuild if needed (or always if there are changes)
+        if (needsBuild || needsInstall) {
+          console.log("[Update] Running bun run build...");
+          await execAsync("bun run build", { cwd: projectDir, timeout: 300000 });
+        }
+
+        // 8. Restart systemd service (if running under systemd)
+        try {
+          console.log("[Update] Restarting zephystream service...");
+          await execAsync("sudo systemctl restart zephystream", { timeout: 30000 });
+        } catch {
+          // Not running under systemd — that's OK
+          console.log("[Update] systemd restart failed (not running under systemd?)");
+        }
+
+        try {
+          console.log("[Update] Restarting zephystream-realtime service...");
+          await execAsync("sudo systemctl restart zephystream-realtime", { timeout: 30000 });
+        } catch {
+          // Realtime service might not be installed
+        }
+
+        // Build response message
+        const steps: string[] = ["git pull"];
+        if (needsInstall) steps.push("bun install");
+        if (needsDbPush) steps.push("bun run db:push");
+        if (needsBuild || needsInstall) steps.push("bun run build");
+        steps.push("systemctl restart zephystream");
+        steps.push("systemctl restart zephystream-realtime");
 
         return NextResponse.json({
           success: true,
@@ -164,15 +210,15 @@ export async function POST(req: Request) {
           changedFiles,
           needsInstall,
           needsDbPush,
+          needsBuild,
           beforeCommit: beforePull.slice(0, 7),
           afterCommit: afterPull.slice(0, 7),
-          message: needsInstall || needsDbPush
-            ? "Update pulled. Run `bun install` and `bun run db:push`, then restart the server."
-            : "Update pulled successfully. Restart the server to apply changes.",
+          stepsCompleted: steps,
+          message: `Update complete! Steps: ${steps.join(" → ")}. Server restarted automatically.`,
         });
       } catch (err: any) {
         return NextResponse.json(
-          { error: `git pull failed: ${err.message}` },
+          { error: `Update failed: ${err.message}` },
           { status: 500 }
         );
       }

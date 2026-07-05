@@ -70,10 +70,15 @@ export function SettingsView({ user }: { user: any }) {
       return data;
     },
     onSuccess: (data) => {
-      toast.success(data.message);
+      toast.success(data.message, { duration: 8000 });
+      if (data.stepsCompleted) {
+        toast.info(`Steps: ${data.stepsCompleted.join(" → ")}`, { duration: 10000 });
+      }
       setUpdateDialogOpen(false);
+      // Reload page after 3 seconds to load new version
+      setTimeout(() => window.location.reload(), 3000);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error) => toast.error(err.message, { duration: 8000 }),
   });
 
   // Fetch backups
