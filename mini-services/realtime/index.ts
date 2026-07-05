@@ -1,13 +1,31 @@
 // ZephyrStream Real-Time Service (Socket.io)
 // Port 3003 — polls database for stream status + activity log changes
 // Start: cd mini-services/realtime && bun install && bun run dev
+//
+// Uses the PARENT PROJECT's Prisma Client (not its own).
+// The parent project's generated client is at ../../node_modules/@prisma/client
+// This avoids the "did not initialize yet" error because prisma generate
+// only runs in the parent project directory.
 
 import { Server as SocketIOServer } from "socket.io";
-import { PrismaClient } from "@prisma/client";
 import http from "http";
+import path from "path";
+
+// Dynamically import PrismaClient from the parent project's node_modules
+// This ensures we use the already-generated client
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const parentNodeModules = path.resolve(__dirname, "../../node_modules/@prisma/client");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { PrismaClient } = require(parentNodeModules);
 
 const PORT = 3003;
-const db = new PrismaClient();
+const db = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL || "file:../../db/custom.db",
+    },
+  },
+});
 
 const httpServer = http.createServer((req, res) => {
   if (req.url === "/health") {
