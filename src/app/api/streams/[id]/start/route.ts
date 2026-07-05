@@ -39,11 +39,37 @@ export async function POST(
       );
     }
 
+    // === ATOMIC LOCK: claim the stream by atomically transitioning its
+    // status to "preparing". If two concurrent start requests arrive,
+    // only one will see `count === 1` — the other gets `count === 0`
+    // and bails out. This prevents double-FFmpeg spawns.
+    // The `where` clause filters on the current status NOT being in
+    // {live, preparing, stopping}, so an already-running stream is
+    // rejected atomically.
+    const claim = await db.stream.updateMany({
+      where: {
+        id,
+        status: { notIn: ["live", "preparing", "stopping"] },
+      },
+      data: { status: "preparing", lastError: null },
+    });
+    if (claim.count === 0) {
+      return NextResponse.json(
+        { error: "Stream is already running or being started by another request" },
+        { status: 409 }
+      );
+    }
+
     // Resolve video files (combines individual files + playlist expansion)
     const resolved = await resolveVideoFiles(stream);
     const videoFiles = resolved.videoFiles;
 
     if (videoFiles.length === 0) {
+      // Roll back the preparing claim so the user can retry
+      await db.stream.update({
+        where: { id },
+        data: { status: "scheduled" },
+      }).catch(() => {});
       return NextResponse.json(
         { error: "No video files found. Please add source files or playlists to the stream." },
         { status: 400 }
@@ -67,12 +93,6 @@ export async function POST(
         `(${resolved.individualCount} individual + ${resolved.playlistCount} from ${resolved.playlistExpandedCount} playlist(s)) — no shuffle`
       );
     }
-
-    // Update status to preparing
-    await db.stream.update({
-      where: { id: stream.id },
-      data: { status: "preparing", lastError: null },
-    });
 
     // If channel is connected, create a YouTube broadcast (uses API quota)
     if (stream.channelId && stream.channel?.status === "active") {

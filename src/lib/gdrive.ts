@@ -23,8 +23,15 @@ export async function listDriveFiles(
   });
 
   const drive = google.drive({ version: "v3", auth: oauth2Client });
+
+  // SECURITY: escape single quotes in folderId before interpolating into
+  // the Drive query string. Drive file IDs are normally alphanumeric, but
+  // a malformed ID with a single quote would break the query syntax (and
+  // could potentially be used to inject query operators). Drive's API
+  // requires escaping `'` as `\'` inside single-quoted string literals.
+  const safeFolderId = (folderId || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   const response = await drive.files.list({
-    q: `'${folderId}' in parents and trashed=false`,
+    q: `'${safeFolderId}' in parents and trashed=false`,
     fields: "files(id, name, mimeType, size, modifiedTime, thumbnailLink)",
     pageSize: 200,
     orderBy: "modifiedTime desc",

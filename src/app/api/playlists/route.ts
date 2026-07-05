@@ -50,11 +50,15 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Attach a count + total size for convenience
+    // Attach a count + total size for convenience.
+    // Use optional chaining for `it.file?.size` — if a file row was
+    // hard-deleted while a PlaylistItem still references it (DB-level
+    // inconsistency), `it.file` is null and the previous code would
+    // throw TypeError, taking down the whole endpoint with a 500.
     const enriched = playlists.map((p) => ({
       ...p,
       itemCount: p.items.length,
-      totalSize: p.items.reduce((sum, it) => sum + (it.file.size || 0), 0),
+      totalSize: p.items.reduce((sum, it) => sum + (it.file?.size ?? 0), 0),
     }));
 
     return NextResponse.json({ playlists: enriched });

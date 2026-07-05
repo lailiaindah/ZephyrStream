@@ -80,10 +80,20 @@ export async function PATCH(
       }
     }
 
-    // Update basic fields
+    // Update basic fields. Use String() coercion for name and description
+    // so a non-string truthy value (e.g. 123) doesn't throw on .trim().
     const updateData: any = {};
-    if (name !== undefined) updateData.name = String(name).trim();
-    if (description !== undefined) updateData.description = description?.trim() || null;
+    if (name !== undefined) {
+      const trimmed = String(name).trim();
+      if (!trimmed) {
+        return NextResponse.json({ error: "Playlist name cannot be empty" }, { status: 400 });
+      }
+      updateData.name = trimmed;
+    }
+    if (description !== undefined) {
+      const trimmed = String(description).trim();
+      updateData.description = trimmed || null;
+    }
     if (channelId !== undefined) updateData.channelId = newChannelId;
     if (shuffleOwn !== undefined) {
       updateData.shuffleOwn = typeof shuffleOwn === "boolean" ? shuffleOwn : null;

@@ -18,6 +18,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "action and ids[] are required" }, { status: 400 });
     }
 
+    // Cap the batch size to prevent DoS via huge requests. Each ID
+    // triggers a DB query plus (for stop) a transitionBroadcast API call
+    // — a 10,000-element batch would tie up the server for minutes.
+    if (ids.length > 50) {
+      return NextResponse.json(
+        { error: "Too many streams in one batch (max 50). Split into smaller batches." },
+        { status: 400 }
+      );
+    }
+
     const results: any[] = [];
 
     for (const id of ids) {
@@ -35,8 +45,25 @@ export async function POST(req: NextRequest) {
             results.push({ id, success: false, error: "Not running" }); continue;
           }
           if (stream.pid) await stopFFmpegStream(stream.pid);
+          // Capture YouTube transition errors instead of silently
+          // swallowing — log them so the user knows YouTube may need
+          // manual attention. Previously the empty catch {} hid all
+          // failures, reporting success even when the broadcast stayed
+          // in "live" state on YouTube's side.
           if (stream.channelId && stream.broadcastId) {
-            try { await transitionBroadcast(stream.channelId, stream.broadcastId, "complete"); } catch {}
+            try {
+              await transitionBroadcast(stream.channelId, stream.broadcastId, "complete");
+            } catch (ytErr: any) {
+              await db.activityLog.create({
+                data: {
+                  userId: user.id,
+                  level: "warn",
+                  category: "stream",
+                  message: `Batch stop: YouTube transition failed for ${stream.name}`,
+                  details: ytErr.message,
+                },
+              }).catch(() => {});
+            }
           }
           await db.stream.update({ where: { id }, data: { status: "ended", endedAt: new Date(), pid: null } });
           results.push({ id, success: true, action: "stopped" });
@@ -45,7 +72,11 @@ export async function POST(req: NextRequest) {
           if (stream.status === "live" || stream.status === "preparing") {
             results.push({ id, success: false, error: "Already running" }); continue;
           }
-          // Mark for scheduler to pick up — set startAt to now
+          // Mark for scheduler to pick up — set startAt to now.
+          // NOTE: this only queues the stream; the scheduler's
+          // autoStartScheduledStreams() will actually spawn FFmpeg on
+          // the next tick (within 30s). To start immediately, use the
+          // single-stream /api/streams/[id]/start endpoint instead.
           await db.stream.update({ where: { id }, data: { status: "scheduled", startAt: new Date(), retryCount: 0 } });
           results.push({ id, success: true, action: "queued for start" });
         }

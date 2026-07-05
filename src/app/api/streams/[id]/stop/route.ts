@@ -30,6 +30,24 @@ export async function POST(
       );
     }
 
+    // === ATOMIC LOCK: claim the stream for stopping. If two concurrent
+    // stop requests arrive, only one proceeds — the other gets count=0
+    // and returns 409. This prevents double-calling stopFFmpegStream
+    // and double-charging YouTube API quota on transitionBroadcast.
+    const claim = await db.stream.updateMany({
+      where: {
+        id,
+        status: { in: ["live", "preparing"] },
+      },
+      data: { status: "stopping" },
+    });
+    if (claim.count === 0) {
+      return NextResponse.json(
+        { error: "Stream is already being stopped by another request" },
+        { status: 409 }
+      );
+    }
+
     // Parse body to check if user wants to skip reschedule
     let skipReschedule = false;
     try {
@@ -89,20 +107,37 @@ export async function POST(
     });
 
     // If autoCreateSchedule is on AND user didn't choose "Stop Only",
-    // create the next-day schedule (startAt + 24h, NOT endedAt + 24h)
+    // create the next-day schedule (startAt + 24h, NOT endedAt + 24h).
+    // Wrap in try/catch so a failure here doesn't fail the stop request
+    // — the stream is already stopped successfully at this point.
     let nextSchedule = null;
+    let rescheduleWarning: string | null = null;
     if (stream.autoCreateSchedule && !skipReschedule) {
-      nextSchedule = await createNextDaySchedule(stream);
-      if (nextSchedule) {
+      try {
+        nextSchedule = await createNextDaySchedule(stream);
+        if (nextSchedule) {
+          await db.activityLog.create({
+            data: {
+              userId: user.id,
+              level: "success",
+              category: "stream",
+              message: `Auto-created next-day schedule: ${stream.name}`,
+              details: `Start at ${nextSchedule.startAt?.toISOString()}`,
+            },
+          });
+        }
+      } catch (schedErr: any) {
+        console.warn(`[Stop] createNextDaySchedule failed: ${schedErr.message}`);
+        rescheduleWarning = `Stream stopped, but next-day schedule creation failed: ${schedErr.message}`;
         await db.activityLog.create({
           data: {
             userId: user.id,
-            level: "success",
+            level: "warn",
             category: "stream",
-            message: `Auto-created next-day schedule: ${stream.name}`,
-            details: `Start at ${nextSchedule.startAt?.toISOString()}`,
+            message: `Next-day schedule creation failed for ${stream.name}`,
+            details: schedErr.message,
           },
-        });
+        }).catch(() => {});
       }
     } else if (stream.autoCreateSchedule && skipReschedule) {
       await db.activityLog.create({
@@ -119,6 +154,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       stopped,
+      warning: rescheduleWarning,
       nextSchedule: nextSchedule
         ? {
             id: nextSchedule.id,

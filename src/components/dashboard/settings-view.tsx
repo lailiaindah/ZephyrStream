@@ -9,12 +9,34 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Shield, Server, Cpu, Loader2, CheckCircle2, Download, RefreshCw, GitBranch, AlertCircle, Database, Plus, Trash2, Terminal } from "lucide-react";
+import { User, Shield, Server, Cpu, Loader2, CheckCircle2, Download, RefreshCw, GitBranch, AlertCircle, Database, Plus, Trash2, Terminal, Save } from "lucide-react";
 import { APP_VERSION } from "@/lib/constants";
 
 export function SettingsView({ user }: { user: any }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(user?.name || "");
+
+  // Update profile (name only). Previously the name input was non-functional —
+  // there was no Save button and no API call. Now we PATCH /api/auth/profile.
+  const updateProfileMutation = useMutation({
+    mutationFn: async (newName: string) => {
+      const res = await fetch("/api/auth/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update profile");
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success("Profile updated");
+      // Update the cached auth data so the sidebar/header reflect the new name
+      queryClient.setQueryData(["auth-me"], { user: data.user });
+      queryClient.invalidateQueries({ queryKey: ["auth-me"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
 
   const { data: ffmpegInfo } = useQuery({
     queryKey: ["ffmpeg"],
@@ -113,11 +135,31 @@ export function SettingsView({ user }: { user: any }) {
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-slate-200">Name</Label>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="bg-slate-900 border-slate-700 text-white"
-              />
+              <div className="flex gap-2">
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="bg-slate-900 border-slate-700 text-white"
+                  maxLength={100}
+                  placeholder="Your name"
+                />
+                <Button
+                  onClick={() => updateProfileMutation.mutate(name)}
+                  disabled={
+                    updateProfileMutation.isPending ||
+                    !name.trim() ||
+                    name.trim() === (user?.name || "")
+                  }
+                  className="bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 shrink-0"
+                >
+                  {updateProfileMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-1" />
+                  )}
+                  Save
+                </Button>
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label className="text-slate-200">Email</Label>

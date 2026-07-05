@@ -7,7 +7,19 @@ import { cookies } from "next/headers";
 import { db } from "@/lib/db";
 import { SESSION_COOKIE_NAME, SESSION_EXPIRY_DAYS } from "@/lib/constants";
 
+// JWT secret for signing session tokens.
+// SECURITY: warn loudly at startup if the dev fallback is being used in
+// production — any attacker who knows this string can forge valid JWTs
+// and bypass authentication entirely.
 const JWT_SECRET = process.env.JWT_SECRET || "zephystream-dev-secret-change-in-production-please";
+
+if (process.env.NODE_ENV === "production" && JWT_SECRET === "zephystream-dev-secret-change-in-production-please") {
+  console.warn(
+    "⚠️  WARNING: JWT_SECRET is not set in production! Using the default dev secret.\n" +
+    "   Any attacker can forge valid session tokens. Set JWT_SECRET in your .env file to a long random string:\n" +
+    "   echo \"JWT_SECRET=$(openssl rand -hex 32)\" >> .env"
+  );
+}
 
 export interface SessionPayload {
   userId: string;

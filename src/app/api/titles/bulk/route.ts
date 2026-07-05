@@ -18,6 +18,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Cap the array size to prevent DoS via huge requests.
+    if (titles.length > 500) {
+      return NextResponse.json(
+        { error: "Too many titles in one request (max 500). Split into smaller batches." },
+        { status: 400 }
+      );
+    }
+
+    // Filter to non-empty strings only. Previously the code would throw
+    // `TypeError: title.trim is not a function` if any element was a
+    // number/object/null, aborting the whole transaction with a 500.
+    const cleanTitles: string[] = [];
+    for (const t of titles) {
+      if (typeof t === "string") {
+        const trimmed = t.trim();
+        if (trimmed) cleanTitles.push(trimmed);
+      }
+    }
+    if (cleanTitles.length === 0) {
+      return NextResponse.json(
+        { error: "No valid (non-empty) titles provided" },
+        { status: 400 }
+      );
+    }
+
     // Verify channel ownership
     const channel = await db.channel.findFirst({
       where: { id: channelId, userId: user.id },
@@ -33,12 +58,12 @@ export async function POST(req: NextRequest) {
 
     // Create all titles in a transaction
     const created = await db.$transaction(
-      titles.map((title: string) =>
+      cleanTitles.map((title: string) =>
         db.titleItem.create({
           data: {
             userId: user.id,
             channelId,
-            title: title.trim(),
+            title,
             sortOrder: nextOrder++,
           },
         })

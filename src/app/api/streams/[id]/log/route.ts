@@ -22,7 +22,13 @@ export async function GET(
     }
 
     const url = new URL(req.url);
-    const lines = parseInt(url.searchParams.get("lines") || "200", 10);
+    // Validate lines — must be a finite positive integer between 1 and 5000.
+    // Negative values would make `slice(-lines)` read the whole file; very
+    // large values could OOM the server.
+    const rawLines = parseInt(url.searchParams.get("lines") || "200", 10);
+    const lines = Number.isFinite(rawLines) && rawLines > 0
+      ? Math.min(rawLines, 5000)
+      : 200;
 
     if (!stream.logFile) {
       return NextResponse.json({ log: "", message: "No log file available" });

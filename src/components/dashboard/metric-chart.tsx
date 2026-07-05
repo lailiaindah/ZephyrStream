@@ -12,6 +12,11 @@ interface MetricChartProps {
 }
 
 export function MetricChart({ title, data, color, unit = "%", max = 100 }: MetricChartProps) {
+  // Slugify the title for use in the SVG gradient id. Spaces in SVG
+  // fragment identifiers can cause `url(#...)` references to fail in
+  // some browsers, making the area fill disappear. Also avoids
+  // collisions when two charts share a title.
+  const gradientId = `grad-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   return (
     <Card className="border-slate-800/60 bg-slate-900/40 backdrop-blur-sm">
       <div className="p-5">
@@ -25,7 +30,7 @@ export function MetricChart({ title, data, color, unit = "%", max = 100 }: Metri
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: -16 }}>
               <defs>
-                <linearGradient id={`grad-${title}`} x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={color} stopOpacity={0.4} />
                   <stop offset="100%" stopColor={color} stopOpacity={0} />
                 </linearGradient>
@@ -60,7 +65,7 @@ export function MetricChart({ title, data, color, unit = "%", max = 100 }: Metri
                 dataKey="value"
                 stroke={color}
                 strokeWidth={2}
-                fill={`url(#grad-${title})`}
+                fill={`url(#${gradientId})`}
               />
             </AreaChart>
           </ResponsiveContainer>

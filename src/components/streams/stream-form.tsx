@@ -102,6 +102,25 @@ function StreamFormInner({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Client-side validation: ensure there's a source before submitting.
+    // The backend will reject anyway, but this gives the user immediate
+    // inline feedback instead of a generic error toast.
+    if (sourceType === "local" && !sourcePath.trim()) {
+      toast.error("Please enter a local folder path, or switch to Uploaded Files source.");
+      return;
+    }
+    if (sourceType === "uploaded" && selectedFileIds.length === 0 && selectedPlaylistIds.length === 0) {
+      toast.error("Please select at least one uploaded file or playlist, or switch to Local Path source.");
+      return;
+    }
+
+    // Validate duration: minHours must be <= maxHours
+    if (Number(minHours) > Number(maxHours)) {
+      toast.error("Minimum duration cannot be greater than maximum duration.");
+      return;
+    }
+
     onSubmit({
       name,
       description,

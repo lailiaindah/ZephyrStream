@@ -57,13 +57,22 @@ export async function POST(
       redirectUri
     );
 
-    // Update the channel with the tokens
+    // Update the channel with the tokens.
+    // Validate expiry_date — Google returns it as a number (ms since epoch),
+    // but if the field is missing/invalid we default to "now + 1 hour" so
+    // the proactive-refresh logic in the scheduler still works correctly.
+    // `new Date(undefined)` would produce Invalid Date, which Prisma
+    // stores as an invalid value and breaks expiry comparisons.
+    const expiresAt = typeof tokens.expiry_date === "number"
+      ? new Date(tokens.expiry_date)
+      : new Date(Date.now() + 3600 * 1000);
+
     await db.channel.update({
       where: { id: channel.id },
       data: {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token || channel.refreshToken,
-        tokenExpiresAt: new Date(tokens.expiry_date),
+        tokenExpiresAt: expiresAt,
         status: "active",
         lastSyncAt: new Date(),
       },

@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import fs from "fs/promises";
+import path from "path";
+import { UPLOAD_DIR } from "@/lib/constants";
 
 export async function GET(
   _req: NextRequest,
@@ -96,7 +99,43 @@ export async function DELETE(
       return NextResponse.json({ error: "Channel not found" }, { status: 404 });
     }
 
+    // Before deleting the channel row (which cascades to files, titles,
+    // thumbnails, playlists, streams), collect the physical file paths
+    // so we can delete them from disk too. Otherwise disk fills up with
+    // orphaned files belonging to deleted channels.
+    const [filesToDelete, thumbnailsToDelete] = await Promise.all([
+      db.uploadedFile.findMany({
+        where: { channelId: id },
+        select: { storagePath: true },
+      }),
+      db.thumbnailItem.findMany({
+        where: { channelId: id },
+        select: { storagePath: true },
+      }),
+    ]);
+
+    const physicalPaths = [
+      ...filesToDelete.map((f) => f.storagePath),
+      ...thumbnailsToDelete.map((t) => t.storagePath),
+    ].filter(Boolean) as string[];
+
+    // Delete the channel row (cascades to all related DB rows)
     await db.channel.delete({ where: { id } });
+
+    // Best-effort cleanup of physical files. Use Promise.allSettled so
+    // one failure doesn't fail the whole delete — the DB rows are already
+    // gone, and a leftover file is just disk waste (not a correctness bug).
+    if (physicalPaths.length > 0) {
+      await Promise.allSettled(physicalPaths.map((p) => fs.unlink(p)));
+    }
+
+    // Also remove the per-channel upload directory if it exists
+    const channelUploadDir = path.join(UPLOAD_DIR, "channels", id);
+    const thumbUploadDir = path.join(UPLOAD_DIR, "thumbnails", id);
+    await Promise.allSettled([
+      fs.rm(channelUploadDir, { recursive: true, force: true }),
+      fs.rm(thumbUploadDir, { recursive: true, force: true }),
+    ]);
 
     await db.activityLog.create({
       data: {
@@ -104,6 +143,7 @@ export async function DELETE(
         level: "warn",
         category: "channel",
         message: `Channel deleted: ${channel.name}`,
+        details: `Cleaned up ${physicalPaths.length} physical file(s)`,
       },
     });
 

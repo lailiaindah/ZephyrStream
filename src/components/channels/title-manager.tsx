@@ -143,6 +143,7 @@ export function TitleManager({ channelId, channelName }: TitleManagerProps) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["titles", channelId] });
     },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   return (

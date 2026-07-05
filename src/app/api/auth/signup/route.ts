@@ -1,5 +1,6 @@
 // POST /api/auth/signup — Register a new user
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { hashPassword, createToken, setSessionCookie, isValidEmail, validatePassword } from "@/lib/auth";
 
@@ -27,26 +28,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: passwordCheck.message }, { status: 400 });
     }
 
-    // Check if user already exists
-    const existing = await db.user.findUnique({ where: { email: email.toLowerCase() } });
-    if (existing) {
-      return NextResponse.json(
-        { error: "An account with this email already exists" },
-        { status: 409 }
-      );
-    }
-
-    // Create the new user
+    // Create the new user. We rely on the unique constraint on `email`
+    // to handle the race condition where two concurrent signups submit
+    // the same email — both pass the existence check, but only one
+    // create succeeds; the other throws Prisma P2002 which we handle
+    // below as a 409.
     const passwordHash = await hashPassword(password);
-    const user = await db.user.create({
-      data: {
-        email: email.toLowerCase(),
-        name: name || email.split("@")[0],
-        passwordHash,
-        role: "user",
-      },
-      select: { id: true, email: true, name: true, role: true },
-    });
+    let user;
+    try {
+      user = await db.user.create({
+        data: {
+          email: email.toLowerCase(),
+          name: name || email.split("@")[0],
+          passwordHash,
+          role: "user",
+        },
+        select: { id: true, email: true, name: true, role: true },
+      });
+    } catch (err: any) {
+      // P2002 = unique constraint violation (email already exists)
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        return NextResponse.json(
+          { error: "An account with this email already exists" },
+          { status: 409 }
+        );
+      }
+      throw err; // re-throw to outer catch
+    }
 
     // Create session
     const token = createToken({
@@ -73,8 +81,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error("Signup error:", error);
+    // Don't leak internal error details to the client
     return NextResponse.json(
-      { error: error.message || "Failed to create account" },
+      { error: "Failed to create account. Please try again." },
       { status: 500 }
     );
   }

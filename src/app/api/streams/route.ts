@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { YOUTUBE_RTMP_BASE } from "@/lib/constants";
 import { pickTitleAndThumbnail } from "@/lib/youtube";
+import { validateSourcePath } from "@/lib/path-validation";
 
 export async function GET(req: NextRequest) {
   try {
@@ -109,6 +110,34 @@ export async function POST(req: NextRequest) {
       if (!channel) {
         return NextResponse.json({ error: "Channel not found" }, { status: 404 });
       }
+    }
+
+    // SECURITY: Validate sourcePath to prevent path traversal. Without
+    // this, a user could set sourcePath to /etc or /proc and have
+    // FFmpeg stream arbitrary system files to YouTube.
+    const effectiveSourceType = sourceType || source?.sourceType || "local";
+    const effectiveSourcePath = sourcePath || source?.sourcePath || null;
+    if (effectiveSourceType === "local" && effectiveSourcePath) {
+      // For duplicate-from flow, the source path was already validated when
+      // the source stream was created — but we re-validate anyway in case
+      // the user passed a new sourcePath.
+      const pathCheck = validateSourcePath(effectiveSourcePath);
+      if (!pathCheck.ok) {
+        return NextResponse.json(
+          { error: `Invalid source path: ${pathCheck.reason}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate duration: minHours must be <= maxHours
+    const effectiveMinHours = minHours ?? source?.minHours ?? 2.0;
+    const effectiveMaxHours = maxHours ?? source?.maxHours ?? 4.0;
+    if (Number(effectiveMinHours) > Number(effectiveMaxHours)) {
+      return NextResponse.json(
+        { error: "Minimum duration cannot be greater than maximum duration" },
+        { status: 400 }
+      );
     }
 
     const stream = await db.stream.create({

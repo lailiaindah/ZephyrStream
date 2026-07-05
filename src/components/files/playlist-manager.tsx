@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -511,10 +511,37 @@ function EditPlaylistDialog({
       ? null
       : playlist.shuffleOwn
   );
-  // selectedFileIds represents the desired final order
+  // selectedFileIds represents the desired final order.
+  // Initialize from the playlist passed in (which may or may not have
+  // items — the list endpoint includes them, but to be safe we also
+  // fetch the full playlist below).
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>(
     (playlist.items || []).map((it: any) => it.fileId)
   );
+
+  // Fetch the FULL playlist (with items) when the dialog opens — the
+  // playlist prop comes from the list endpoint which usually includes
+  // items, but if it doesn't we'd open the dialog with an empty file
+  // list and the user could accidentally save with zero files (wiping
+  // the playlist). This fetch guarantees we have the actual items.
+  const { data: fullPlaylist, isLoading: isLoadingFull } = useQuery({
+    queryKey: ["playlist", playlist.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/playlists/${playlist.id}`);
+      const data = await res.json();
+      return data.playlist as any;
+    },
+    enabled: open,
+  });
+
+  // When the full playlist arrives, sync selectedFileIds if it's currently
+  // empty (i.e. the prop didn't include items). We only do this once per
+  // open — if the user has already added/removed items, we don't override.
+  useEffect(() => {
+    if (fullPlaylist?.items && selectedFileIds.length === 0) {
+      setSelectedFileIds(fullPlaylist.items.map((it: any) => it.fileId));
+    }
+  }, [fullPlaylist, selectedFileIds.length]);
 
   // Fetch the channel's files (for picker — supports adding new files)
   const { data: filesData } = useQuery({

@@ -66,7 +66,12 @@ function ChannelFormInner({
     onError: (err: Error) => toast.error(err.message),
   });
 
-  // Get OAuth URL
+  // Get OAuth URL.
+  // Note: previously this mutation had an onSuccess that called
+  // window.open(url) AND handleAuthorize also called .then(url => window.open)
+  // — opening TWO windows (one correct, one about:blank because data was a
+  // string, not an object with .authUrl). Now only the onSuccess handler
+  // opens the URL; handleAuthorize just calls mutate().
   const authUrlMutation = useMutation({
     mutationFn: async (channelId: string) => {
       const res = await fetch(`/api/channels/${channelId}/auth-url`, {
@@ -123,14 +128,11 @@ function ChannelFormInner({
     const channelId = editingChannel?.id || saveMutation.data?.channel?.id;
     if (!channelId) return;
 
-    // Open Google auth in new tab (not popup — user needs to copy URL after)
-    authUrlMutation.mutateAsync(channelId).then((data) => {
-      window.open(data.authUrl, "_blank");
-      toast.info(
-        "After authorizing, copy the full URL from the browser address bar and paste it below.",
-        { duration: 8000 }
-      );
-    });
+    // Just trigger the mutation — the onSuccess handler above opens the
+    // URL and shows the toast. (Previously this also called .then() with
+    // `data.authUrl` which was undefined since data is the URL string,
+    // opening a second about:blank window.)
+    authUrlMutation.mutate(channelId);
   };
 
   // Exchange code extracted from the redirect URL

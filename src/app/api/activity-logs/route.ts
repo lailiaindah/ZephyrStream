@@ -9,7 +9,10 @@ export async function GET(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { searchParams } = new URL(req.url);
-    const limit = parseInt(searchParams.get("limit") || "50", 10);
+    // Validate limit — must be a finite positive integer. NaN/negative
+    // values would cause Prisma to throw on `take`.
+    const rawLimit = parseInt(searchParams.get("limit") || "50", 10);
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 50;
     const category = searchParams.get("category");
 
     const logs = await db.activityLog.findMany({
@@ -18,7 +21,7 @@ export async function GET(req: NextRequest) {
         ...(category && category !== "all" ? { category } : {}),
       },
       orderBy: { createdAt: "desc" },
-      take: Math.min(limit, 200),
+      take: limit,
     });
 
     return NextResponse.json({ logs });

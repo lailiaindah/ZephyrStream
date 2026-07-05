@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,6 +45,16 @@ export function Header({ user, title, subtitle, actions, onNavigate, onLogout }:
   const queryClient = useQueryClient();
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  // Debounced search query — the actual query key passed to react-query.
+  // Previously every keystroke fired a new fetch of ALL channels + ALL
+  // streams + ALL files, which is expensive. Now we wait 300ms after the
+  // user stops typing before searching.
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   const initials = (user?.name || user?.email || "U")
     .split(" ")
@@ -64,11 +74,14 @@ export function Header({ user, title, subtitle, actions, onNavigate, onLogout }:
     refetchInterval: 30000,
   });
 
-  // Global search across channels, streams, files
+  // Global search across channels, streams, files.
+  // Uses the debounced query so we don't fire 3 requests per keystroke.
+  // Also set a staleTime so the same query doesn't refetch on every
+  // dialog open/close.
   const { data: searchData, isLoading: searchLoading } = useQuery({
-    queryKey: ["global-search", searchQuery],
+    queryKey: ["global-search", debouncedQuery],
     queryFn: async () => {
-      const q = searchQuery.toLowerCase().trim();
+      const q = debouncedQuery.toLowerCase().trim();
       if (!q) return { channels: [], streams: [], files: [] };
 
       const [channelsRes, streamsRes, filesRes] = await Promise.all([
@@ -89,10 +102,14 @@ export function Header({ user, title, subtitle, actions, onNavigate, onLogout }:
         ),
       };
     },
-    enabled: searchQuery.trim().length > 0,
+    enabled: debouncedQuery.trim().length > 0,
+    staleTime: 10000, // cache results for 10s to avoid refetching on dialog toggles
   });
 
-  const unreadCount = (notifData || []).slice(0, 5).length;
+  // Has any notifications at all (just a boolean — the previous
+  // "unreadCount" name was misleading because it didn't actually
+  // track read/unread state).
+  const hasNotifications = (notifData || []).length > 0;
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between gap-4 px-5 py-3 border-b border-slate-800/60 bg-slate-950/60 backdrop-blur-xl">
@@ -217,7 +234,7 @@ export function Header({ user, title, subtitle, actions, onNavigate, onLogout }:
           <PopoverTrigger asChild>
             <Button variant="ghost" size="icon" className="relative text-slate-400 hover:text-slate-100 hover:bg-slate-800/60">
               <Bell className="h-4 w-4" />
-              {unreadCount > 0 && (
+              {hasNotifications && (
                 <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-cyan-400" />
               )}
             </Button>

@@ -12,10 +12,14 @@
 
 import fs from "fs/promises";
 import path from "path";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 
-const execAsync = promisify(exec);
+// SECURITY: Use execFile (not exec) so the DB path is passed as a single
+// argv element with no shell interpretation. Previously the path was
+// interpolated into a shell string, which would allow command injection
+// if DATABASE_URL ever contained shell metacharacters.
+const execFileAsync = promisify(execFile);
 
 const PROJECT_ROOT = process.cwd();
 const BACKUP_DIR = path.join(PROJECT_ROOT, "backups");
@@ -54,10 +58,12 @@ export async function createBackup(): Promise<{ filename: string; size: number }
   const backupFilename = `zephystream_backup_${timestamp}.db`;
   const backupPath = path.join(BACKUP_DIR, backupFilename);
 
-  // Use sqlite3 .backup command (safe online backup)
-  // Falls back to file copy if sqlite3 CLI is not available
+  // Use sqlite3 .backup command (safe online backup).
+  // execFile passes each arg as a separate argv element — no shell, so
+  // paths with spaces / metacharacters are safe.
+  // Falls back to file copy if sqlite3 CLI is not available.
   try {
-    await execAsync(`sqlite3 "${DB_PATH}" ".backup '${backupPath}'"`, { timeout: 30000 });
+    await execFileAsync("sqlite3", [DB_PATH, `.backup '${backupPath}'`], { timeout: 30000 });
   } catch {
     // Fallback: copy the file directly (may miss in-flight writes, but better than nothing)
     console.warn("[Backup] sqlite3 CLI not available, falling back to file copy");

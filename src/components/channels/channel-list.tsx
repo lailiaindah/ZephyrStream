@@ -58,12 +58,28 @@ export function ChannelList() {
   // Sync removed — fetching subscriber/view/video counts burns API quota
   // every time it runs. Channel info is only fetched ONCE on initial connect.
 
-  // Show detail view when a channel is selected
+  // Show detail view when a channel is selected.
+  // If the selected channel no longer exists in the data (e.g. it was
+  // just deleted), show a "not found" message instead of clearing state
+  // during render — calling setState during render is fragile and can
+  // close the detail view unexpectedly during refetches.
   if (detailChannelId) {
     const channel = data?.find((c) => c.id === detailChannelId);
     if (!channel) {
-      setDetailChannelId(null);
-      return null;
+      return (
+        <div className="space-y-5">
+          <Button variant="ghost" onClick={() => setDetailChannelId(null)} className="text-slate-300 hover:bg-slate-800">
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back to Channels
+          </Button>
+          <Card className="border-slate-800/60 bg-slate-900/40 p-12 text-center">
+            <Youtube className="h-10 w-10 text-slate-700 mx-auto mb-3" />
+            <p className="text-sm text-slate-400">
+              This channel no longer exists. It may have been deleted.
+            </p>
+          </Card>
+        </div>
+      );
     }
     return (
       <ChannelDetailView

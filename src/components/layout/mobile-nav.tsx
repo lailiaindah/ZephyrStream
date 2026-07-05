@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/common/logo";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,16 @@ const navItems: { key: ViewKey; label: string; icon: typeof LayoutDashboard }[] 
 
 export function MobileNav({ current, onNavigate, onLogout, liveCount }: MobileNavProps) {
   const [open, setOpen] = useState(false);
+
+  // Close the drawer on Escape key — standard dialog/drawer accessibility.
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open]);
 
   return (
     <>

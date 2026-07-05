@@ -56,6 +56,12 @@ export function useRealtimeUpdates() {
         if (disposed) return;
         if (!socket.connected) {
           console.log("[Realtime] Gateway connection failed, trying direct:", directUrl);
+          // CRITICAL: removeAllListeners before disconnect, otherwise the
+          // old socket's "disconnect" event will fire after we've already
+          // connected via the new socket — and clobber `connected` back
+          // to false. This was the root cause of "Realtime Offline"
+          // showing even when the direct connection was actually live.
+          socket.removeAllListeners();
           socket.disconnect();
           socket = io(directUrl, {
             transports: ["websocket", "polling"],

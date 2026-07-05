@@ -186,10 +186,19 @@ async function cleanupGhostStreams() {
 
 // Retry starting a stream after FFmpeg crash
 async function retryStreamStart(stream: any, retryCount: number) {
-  // Re-fetch to check if stream was manually stopped while we were waiting
+  // Re-fetch to check if stream was manually stopped while we were waiting.
+  // CRITICAL: also bail if the stream is already "live" with a valid PID —
+  // this happens when the user manually clicks "Start" during the backoff
+  // window. Without this check, the retry would spawn a SECOND FFmpeg
+  // process and overwrite the PID, leaving the first one as an untracked
+  // zombie pushing to the same RTMP URL.
   const fresh = await db.stream.findUnique({ where: { id: stream.id } });
   if (!fresh || fresh.status === "ended" || fresh.status === "error") {
     console.log(`[Scheduler] Stream ${stream.id} was stopped during backoff, aborting retry`);
+    return;
+  }
+  if (fresh.status === "live" && fresh.pid) {
+    console.log(`[Scheduler] Stream ${stream.id} is already live with PID ${fresh.pid}, aborting retry`);
     return;
   }
 
@@ -658,24 +667,22 @@ export function startScheduler() {
 
   console.log("[Scheduler] Starting persistent scheduler (node-cron, every 30s)");
 
-  // Use node-cron for persistent scheduling (survives event loop delays)
+  // Use node-cron for persistent scheduling (survives event loop delays).
   // Run every 30 seconds: */30 * * * * *
+  // NOTE: previously this also started a setInterval on the same 30s
+  // cadence as a "fallback" — but both ran unconditionally, doubling
+  // the scheduling overhead and log noise. node-cron alone is
+  // sufficient; the `isRunning` guard in schedulerTick prevents overlap
+  // even if a tick is somehow delayed.
   cronJob = cron.schedule("*/30 * * * * *", () => {
     schedulerTick().catch((err) =>
       console.error("[Scheduler] Cron tick error:", err)
     );
   });
 
-  // Also run once immediately on start
+  // Also run once immediately on start so newly-started streams don't
+  // have to wait up to 30s for the first cron tick.
   schedulerTick().catch(console.error);
-
-  // And run once every 30s via setInterval as a fallback (in case
-  // node-cron has drift issues in some environments)
-  if (!immediateInterval) {
-    immediateInterval = setInterval(() => {
-      schedulerTick().catch(console.error);
-    }, CHECK_INTERVAL_MS);
-  }
 }
 
 // Stop the scheduler

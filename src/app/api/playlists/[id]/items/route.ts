@@ -44,14 +44,31 @@ export async function POST(
     // Determine the starting sortOrder (continue from the highest existing)
     let nextSort = (playlist.items[0]?.sortOrder ?? -1) + 1;
 
+    // Wrap inserts in a transaction so concurrent appends don't collide
+    // on the same starting sortOrder. Each request computes its own
+    // starting sortOrder based on the snapshot at the start of the
+    // transaction; the database serializes the transactions.
     const createdItems: any[] = [];
-    for (const fid of fileIds) {
-      if (!validFileIds.has(fid)) continue;
-      const item = await db.playlistItem.create({
-        data: { playlistId: id, fileId: fid, sortOrder: nextSort++ },
+    await db.$transaction(async (tx) => {
+      // Re-fetch the current max sortOrder inside the transaction to
+      // get the most up-to-date value (another concurrent request may
+      // have just inserted items).
+      const latest = await tx.playlistItem.findFirst({
+        where: { playlistId: id },
+        orderBy: { sortOrder: "desc" },
+        take: 1,
       });
-      createdItems.push(item);
-    }
+      let sortIdx = (latest?.sortOrder ?? -1) + 1;
+
+      for (const fid of fileIds) {
+        if (!validFileIds.has(fid)) continue;
+        const item = await tx.playlistItem.create({
+          data: { playlistId: id, fileId: fid, sortOrder: sortIdx++ },
+        });
+        createdItems.push(item);
+      }
+      nextSort = sortIdx;
+    });
 
     return NextResponse.json({ added: createdItems.length, items: createdItems });
   } catch (error: any) {

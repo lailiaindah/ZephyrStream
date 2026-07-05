@@ -143,12 +143,20 @@ function buildFFmpegArgs(opts: FFmpegOptions, concatListFile?: string): string[]
 
   // Re-encode mode: normalize everything for stable playback
   if (!opts.copyMode) {
+    // Parse the numeric part of videoBitrate (e.g. "4500k" -> 4500).
+    // If the user typed something invalid like "K5" or "abc", fall back
+    // to a safe default of 4500 to avoid `NaN` in the -bufsize argument,
+    // which would cause FFmpeg to crash on launch.
+    const bitrateNum = parseInt(opts.videoBitrate, 10);
+    const safeBitrateNum = Number.isFinite(bitrateNum) && bitrateNum > 0 ? bitrateNum : 4500;
+    const safeBitrateStr = `${safeBitrateNum}k`;
+
     args.push(
       "-c:v", videoCodec,
       "-preset", opts.preset,
-      "-b:v", opts.videoBitrate,
-      "-maxrate", opts.videoBitrate,
-      "-bufsize", `${parseInt(opts.videoBitrate) * 2}k`,
+      "-b:v", safeBitrateStr,
+      "-maxrate", safeBitrateStr,
+      "-bufsize", `${safeBitrateNum * 2}k`,
       "-vf", `scale=${opts.resolution.replace("x", ":")},format=yuv420p`,
       "-r", opts.fps.toString(),
       "-g", (opts.fps * 2).toString(), // Keyframe every 2 seconds
@@ -251,12 +259,17 @@ export async function startFFmpegStream(opts: FFmpegOptions): Promise<{
 export async function stopFFmpegStream(pid: number): Promise<boolean> {
   try {
     process.kill(pid, "SIGTERM");
-    // Wait 2 seconds, then SIGKILL if still alive
+    // Wait 2 seconds, then SIGKILL IF still alive. Previously this fired
+    // SIGKILL unconditionally after 2s — if the process had already
+    // exited (and the OS reused the PID for something else), we'd kill
+    // the wrong process. The isProcessRunning check guards against that.
     setTimeout(() => {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {
-        // Already dead
+      if (isProcessRunning(pid)) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // Already dead
+        }
       }
     }, 2000);
     return true;

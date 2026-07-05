@@ -7,11 +7,13 @@ import { Gauge, AlertCircle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function QuotaDashboard() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ["quota"],
     queryFn: async () => {
       const res = await fetch("/api/quota");
-      return res.json();
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to load quota");
+      return json;
     },
     refetchInterval: 30000,
   });
@@ -24,7 +26,16 @@ export function QuotaDashboard() {
             <Gauge className="h-4 w-4 text-cyan-300" />
             <h3 className="text-sm font-semibold text-white">YouTube API Quota</h3>
           </div>
-          <div className="h-20 zephyr-shimmer rounded-lg" />
+          <div className="h-20 flex items-center justify-center">
+            {error ? (
+              <div className="text-xs text-rose-300 text-center px-3">
+                <AlertCircle className="h-4 w-4 mx-auto mb-1" />
+                Failed to load quota
+              </div>
+            ) : (
+              <div className="h-3 w-3 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
+            )}
+          </div>
         </div>
       </Card>
     );

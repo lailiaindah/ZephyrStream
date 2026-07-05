@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { pickTitleAndThumbnail } from "@/lib/youtube";
+import { validateSourcePath } from "@/lib/path-validation";
 
 export async function GET(
   _req: NextRequest,
@@ -49,6 +50,11 @@ export async function PATCH(
     }
 
     const body = await req.json();
+    // NOTE: "status" was previously in this list, which let any client
+    // PATCH a stream directly to "live" / "ended" without going through
+    // the start/stop endpoints — bypassing FFmpeg process management.
+    // Removed to prevent that bypass. Status is only mutated by
+    // /start, /stop, and the scheduler.
     const allowedFields = [
       "name", "description", "channelId", "streamKey", "rtmpUrl",
       "sourceType", "sourcePath", "sourceFileIds", "playlistSourceIds", "shuffle",
@@ -56,8 +62,31 @@ export async function PATCH(
       "startAt", "encoder", "copyMode", "videoBitrate", "audioBitrate",
       "resolution", "fps", "preset", "privacyStatus", "categoryId", "tags",
       "playlistId", "alteredContent", "spinnerMode", "spinnerEmojis",
-      "autoCreateSchedule", "shuffleTitle", "shuffleThumbnail", "status",
+      "autoCreateSchedule", "shuffleTitle", "shuffleThumbnail",
     ];
+
+    // SECURITY: validate sourcePath before any DB write
+    if (body.sourcePath !== undefined && body.sourcePath) {
+      const pathCheck = validateSourcePath(body.sourcePath);
+      if (!pathCheck.ok) {
+        return NextResponse.json(
+          { error: `Invalid source path: ${pathCheck.reason}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Validate duration consistency
+    if (body.minHours !== undefined || body.maxHours !== undefined) {
+      const minH = body.minHours !== undefined ? Number(body.minHours) : stream.minHours;
+      const maxH = body.maxHours !== undefined ? Number(body.maxHours) : stream.maxHours;
+      if (Number(minH) > Number(maxH)) {
+        return NextResponse.json(
+          { error: "Minimum duration cannot be greater than maximum duration" },
+          { status: 400 }
+        );
+      }
+    }
 
     const updateData: any = {};
     // Fields that should be trimmed if they're strings (avoid storing whitespace-only values)

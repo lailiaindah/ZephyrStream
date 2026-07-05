@@ -65,13 +65,22 @@ export async function PATCH(
       return NextResponse.json({ error: "sortOrder required in body" }, { status: 400 });
     }
 
-    // Update the item's sortOrder, then re-index all items in the playlist
-    // so they remain sequential (0..n-1).
-    await db.playlistItem.update({
-      where: { id: itemId },
+    // SECURITY: use updateMany with playlistId filter so an attacker
+    // can't move an item that belongs to someone else's playlist by
+    // passing their itemId. If count === 0, the item doesn't exist in
+    // this playlist (or doesn't exist at all) — reject.
+    const updateResult = await db.playlistItem.updateMany({
+      where: { id: itemId, playlistId: id },
       data: { sortOrder: newSort },
     });
+    if (updateResult.count === 0) {
+      return NextResponse.json(
+        { error: "Item not found in this playlist" },
+        { status: 404 }
+      );
+    }
 
+    // Re-index all items in the playlist so sortOrders stay sequential.
     const all = await db.playlistItem.findMany({
       where: { playlistId: id },
       orderBy: { sortOrder: "asc" },

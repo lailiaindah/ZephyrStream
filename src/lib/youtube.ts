@@ -496,11 +496,6 @@ export async function getNextTitle(
     idx = Math.floor(Math.random() * titles.length);
   } else {
     idx = channel.titleRotatorIndex % titles.length;
-    // Increment rotator for next time (only in sequential mode)
-    await db.channel.update({
-      where: { id: channelId },
-      data: { titleRotatorIndex: idx + 1 },
-    });
   }
   const titleItem = titles[idx];
 
@@ -521,7 +516,10 @@ export async function getNextTitle(
     }
   }
 
-  // Increment the rotator index for the next stream
+  // Increment the rotator index for the next stream.
+  // (Previously this was also incremented inside the `else` block above,
+  // causing 2 redundant DB writes per title pick — same value both times,
+  // so functionally OK but wasteful and clearly a copy-paste oversight.)
   await db.channel.update({
     where: { id: channelId },
     data: { titleRotatorIndex: idx + 1 },
