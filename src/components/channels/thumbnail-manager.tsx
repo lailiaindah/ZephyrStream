@@ -47,6 +47,7 @@ export function ThumbnailManager({ channelId, channelName }: ThumbnailManagerPro
       toast.success(`${data.thumbnails.length} thumbnail(s) uploaded`);
       queryClient.invalidateQueries({ queryKey: ["thumbnails", channelId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -63,6 +64,7 @@ export function ThumbnailManager({ channelId, channelName }: ThumbnailManagerPro
       toast.success("Thumbnail deleted");
       queryClient.invalidateQueries({ queryKey: ["thumbnails", channelId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -78,6 +80,7 @@ export function ThumbnailManager({ channelId, channelName }: ThumbnailManagerPro
       toast.success(`Deleted ${data.deleted} thumbnails`);
       queryClient.invalidateQueries({ queryKey: ["thumbnails", channelId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });

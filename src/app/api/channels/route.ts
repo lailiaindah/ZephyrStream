@@ -13,7 +13,19 @@ export async function GET() {
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
       include: {
-        _count: { select: { streams: true } },
+        // IMPORTANT: include counts for ALL related entities that the
+        // channel-list UI displays (Streams, Files, Titles, Thumbnails).
+        // Previously only `streams` was included, so the Files/Titles/Thumbs
+        // badges always showed 0 even after uploading items.
+        _count: {
+          select: {
+            streams: true,
+            files: true,
+            titles: true,
+            thumbnails: true,
+            playlists: true,
+          },
+        },
       },
     });
 

@@ -99,6 +99,7 @@ export function FileManager() {
       toast.success(`${data.files.length} file(s) uploaded`);
       queryClient.invalidateQueries({ queryKey: ["files"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -115,6 +116,7 @@ export function FileManager() {
       toast.success("File deleted");
       queryClient.invalidateQueries({ queryKey: ["files"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -132,6 +134,7 @@ export function FileManager() {
       toast.success(`Deleted ${data.deleted} file(s)`);
       queryClient.invalidateQueries({ queryKey: ["files"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });

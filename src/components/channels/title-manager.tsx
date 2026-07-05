@@ -63,6 +63,9 @@ export function TitleManager({ channelId, channelName }: TitleManagerProps) {
       toast.success("Title added");
       queryClient.invalidateQueries({ queryKey: ["titles", channelId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      // Invalidate channels so the title count badge on the channel
+      // card refreshes immediately.
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
       setNewTitle("");
       setAddOpen(false);
     },
@@ -86,6 +89,7 @@ export function TitleManager({ channelId, channelName }: TitleManagerProps) {
       toast.success(`${data.count} titles added`);
       queryClient.invalidateQueries({ queryKey: ["titles", channelId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
       setBulkText("");
       setBulkOpen(false);
     },
@@ -104,6 +108,7 @@ export function TitleManager({ channelId, channelName }: TitleManagerProps) {
       toast.success("Title deleted");
       queryClient.invalidateQueries({ queryKey: ["titles", channelId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -119,6 +124,7 @@ export function TitleManager({ channelId, channelName }: TitleManagerProps) {
       toast.success(`Deleted ${data.deleted} titles`);
       queryClient.invalidateQueries({ queryKey: ["titles", channelId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });

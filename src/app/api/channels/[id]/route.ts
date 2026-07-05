@@ -19,6 +19,18 @@ export async function GET(
           orderBy: { createdAt: "desc" },
           take: 10,
         },
+        // Include counts for all related entities so this endpoint can be
+        // used as a "channel status" check (e.g. visiting /api/channels/[id]
+        // in a browser shows stream/file/title/thumbnail/playlist counts).
+        _count: {
+          select: {
+            streams: true,
+            files: true,
+            titles: true,
+            thumbnails: true,
+            playlists: true,
+          },
+        },
       },
     });
 

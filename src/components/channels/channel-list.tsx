@@ -314,6 +314,8 @@ function ChannelFileManager({
       toast.success(`${data.files.length} file(s) uploaded to ${channelName}`);
       queryClient.invalidateQueries({ queryKey: ["files", channelId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      // Refresh the channel card so the Files count badge updates.
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -330,6 +332,7 @@ function ChannelFileManager({
       toast.success("File deleted");
       queryClient.invalidateQueries({ queryKey: ["files", channelId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -347,6 +350,7 @@ function ChannelFileManager({
       toast.success(`Deleted ${data.deleted} file(s) from ${channelName}`);
       queryClient.invalidateQueries({ queryKey: ["files", channelId] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["channels"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });
