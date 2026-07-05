@@ -47,9 +47,14 @@ export function verifyToken(token: string): SessionPayload | null {
 // Set the session cookie on the response
 export async function setSessionCookie(token: string) {
   const cookieStore = await cookies();
+  // In production, only set secure:true if actually using HTTPS.
+  // When accessing via http://IP:3000 (no domain/HTTPS), secure cookies
+  // won't be sent by the browser, causing "Unauthorized" on all API calls.
+  // We check for an explicit HTTPS env var or fall back to non-secure.
+  const isHttps = process.env.HTTPS === "true" || process.env.FORCE_HTTPS === "true";
   cookieStore.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: isHttps,
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * SESSION_EXPIRY_DAYS,
