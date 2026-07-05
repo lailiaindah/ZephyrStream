@@ -1,6 +1,6 @@
 # ZephyrStream — Multi-Channel YouTube Live Streaming Platform
 
-**v1.2.3** — A self-hosted automated live streaming scheduler for YouTube, built with Next.js 16, TypeScript, Prisma, and FFmpeg. Designed to be installed on a VPS and managed from any browser.
+**v1.3.1** — A self-hosted automated live streaming scheduler for YouTube, built with Next.js 16, TypeScript, Prisma, and FFmpeg. Designed to be installed on a VPS and managed from any browser.
 
 > **Inspired by** the original *Zephyr Streamer* desktop app (PyQt6 + FFmpeg), this is a complete web reimplementation with a fresh design, new architecture, and many new features — built from scratch as a brand-new application.
 
@@ -35,6 +35,18 @@
 - Auto-refresh dashboard, streams list, and notifications
 - Real-time activity log feed
 - Connection status indicator in footer ("Realtime Connected" / "Realtime Offline")
+- Auto-fallback to direct connection if gateway fails
+
+### 🔄 Auto-Recovery on Server Restart
+- When VPS/server restarts, FFmpeg processes are killed but DB still shows "live"
+- Scheduler runs auto-recovery on startup:
+  - "live" streams with dead PID → marked as "ended" or "error"
+  - "preparing" streams → reset to "scheduled"
+  - "stopping" streams → marked as "ended"
+- If stream ran >1 minute before restart → marked as "ended" (clean)
+- If stream ran <1 minute → marked as "error" (with retry logic)
+- Auto-creates next-day schedule if `autoCreateSchedule` is on
+- Activity logs all recovery actions
 
 ### 📊 VPS Monitoring (Real-time)
 Live monitoring of your VPS resources, refreshed every 5 seconds:
@@ -48,16 +60,22 @@ Live monitoring of your VPS resources, refreshed every 5 seconds:
 - **Internet speed test** — downloads a test file from Cloudflare to measure actual throughput
 - Compact icon-grid dashboard — click any tile for detailed info modal
 
+### 📊 Quota Usage Dashboard
+- Tracks YouTube Data API v3 quota usage per day
+- Color-coded progress bar (green / amber / red)
+- Shows: used, remaining, usage %, events today, channels count, total quota
+- Auto-refreshes every 30 seconds
+
 ### 📁 File Management (Per-Channel Isolation)
 - **Upload from PC** — drag-and-drop or click to browse (multi-file supported)
 - **Import from Google Drive** — uses a connected channel's OAuth credentials
   - Browse folders, navigate subfolders, import individual files
-  - Files are downloaded to your VPS for FFmpeg streaming
+  - Files are downloaded to your VPS via streaming (no size limit)
+  - Files automatically assigned to the browsing channel
 - Supported video formats: MP4, MOV, MKV, AVI, WebM, TS, FLV, M4V
 - **Channel-scoped isolation** — files uploaded to Channel A do NOT appear in Channel B
   - Filter files by channel (All / Unassigned / specific channel)
   - Uploads automatically assigned to the selected channel
-  - Google Drive imports automatically assigned to the browsing channel
 - **Delete options**: single file delete + delete all files for a channel
 - Files stored in `public/uploads/channels/{channelId}/` for filesystem isolation
 - **Shuffle** — randomize video playback order for each stream
@@ -109,7 +127,21 @@ Each channel has its own thumbnail collection:
 - Real-time stream status (scheduled / preparing / live / stopping / ended / error)
 - Live FFmpeg log viewer (auto-refreshing)
 - **Copy/Duplicate stream** — clone a schedule with fresh title/thumbnail pick
-- **YouTube broadcast transition retry** — retries up to 5 times with exponential backoff (5s, 10s, 20s, 40s, 80s) to handle YouTube processing delays
+- **YouTube broadcast transition retry** — retries up to 5 times with exponential backoff (5s, 10s, 20s, 40s, 80s)
+
+### 📋 Stream Templates/Presets
+- Save stream configuration as reusable templates
+- Template stores: encoder, bitrate, resolution, fps, preset, privacy, category, tags, playlist ID, altered content, duration (min/max hours), spinner mode + emojis, autoCreateSchedule
+- "Load from template" dropdown in Stream Form — pre-fills all config
+- "Save as Template" button — saves current form config
+- Templates are per-user (not shared)
+
+### 🔲 Batch Operations
+- Multi-select streams with checkboxes
+- Bulk start, bulk stop, bulk delete
+- "Select All" checkbox + per-stream checkboxes
+- Selected cards get cyan border highlight
+- Results show per-stream success/failure
 
 ### 🎨 Description Template Variables
 - Insert `[title]`, `[date]`, `[time]`, `[datetime]` into stream description with one click
@@ -126,51 +158,6 @@ Each channel has its own thumbnail collection:
 - Color-coded by level (info / success / warning / error)
 - Auto-pruned after 30 days
 
-<<<<<<< HEAD
-### 🖥️ Systemd Service for Production
-- **Auto-start on VPS boot** — both main app (port 3000) and realtime service (port 3003)
-- **Auto-restart on crash** — systemd `Restart=always` with 5-second delay
-- One-command installer: `sudo bash deploy/install-services.sh`
-- Service files included in `deploy/` directory
-- Security hardening: `NoNewPrivileges`, `ProtectSystem=strict`, `PrivateTmp`
-
-### 🔄 Auto-Recovery on Server Restart
-- When VPS/server restarts, FFmpeg processes are killed but DB still shows "live"
-- Scheduler runs auto-recovery on startup:
-  - "live" streams with dead PID → marked as "ended" or "error"
-  - "preparing" streams → reset to "scheduled"
-  - "stopping" streams → marked as "ended"
-- If stream ran >1 minute before restart → marked as "ended" (clean)
-- If stream ran <1 minute → marked as "error" (with retry logic)
-- Auto-creates next-day schedule if `autoCreateSchedule` is on
-- Activity logs all recovery actions
-
-### 📋 Stream Templates/Presets
-- Save stream configuration as reusable templates
-- Template stores: encoder, bitrate, resolution, fps, preset, privacy, category, tags, playlist ID, altered content, duration (min/max hours), spinner mode + emojis, autoCreateSchedule
-- "New Stream from Template" — pre-fills the form with saved config
-- Templates are per-user (not shared)
-- API: `GET/POST /api/templates`, `DELETE /api/templates/[id]`
-
-### 📊 Quota Usage Dashboard
-- Tracks YouTube Data API v3 quota usage per day
-- Estimates based on API call costs:
-  - Broadcast create: ~100 units (insert + bind)
-  - Broadcast update: ~50 units
-  - Broadcast complete: ~50 units
-  - Thumbnail upload: ~50 units
-- Shows: used, remaining, usage %, events today
-- Per-channel quota calculation (10,000 units × number of channels)
-- API: `GET /api/quota`
-
-### 🔲 Batch Operations
-- Multi-select streams with checkboxes
-- Bulk start, bulk stop, bulk delete
-- Results show per-stream success/failure
-- API: `POST /api/streams/batch` with `{ action, ids[] }`
-
----
-=======
 ### 💾 Database Backup
 - **Automatic daily backup** — runs via scheduler (throttled to once per 24h)
 - Uses SQLite `.backup` command (safe online backup, no write locks)
@@ -178,7 +165,6 @@ Each channel has its own thumbnail collection:
 - Manual backup trigger from Settings page
 - Download + delete backups from UI
 - Backups stored in `backups/` directory
->>>>>>> 56fa230deb94cfd4b4724a5bb1d4c9fe05dcb1f4
 
 ### 🧹 Auto Cleanup
 - Stream log files older than 7 days → auto-deleted
@@ -187,6 +173,13 @@ Each channel has its own thumbnail collection:
 - Temp files in `/tmp/` (zephystream-*) older than 24 hours → auto-deleted
 - Orphaned FFmpeg concat list files → auto-deleted on process exit
 - Runs every hour (throttled)
+
+### 🖥️ Systemd Service for Production
+- **Auto-start on VPS boot** — both main app (port 3000) and realtime service (port 3003)
+- **Auto-restart on crash** — systemd `Restart=always` with 5-second delay
+- One-command installer: `sudo bash deploy/install-services.sh`
+- Service files included in `deploy/` directory
+- Security hardening: `NoNewPrivileges`, `ProtectSystem=strict`, `PrivateTmp`
 
 ### 🔄 Update Checker
 - **"Cek Update" button** in Settings — checks GitHub for new commits
@@ -201,87 +194,6 @@ Each channel has its own thumbnail collection:
 - Custom glow effects, pulse animations, shimmer loading states
 - Fully responsive (mobile sidebar, touch-friendly targets)
 - Built with shadcn/ui component library + Tailwind CSS 4
-
----
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Browser (Client)                          │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │  Next.js 16 App (React 19 + TypeScript)             │    │
-│  │  - Auth Form (signup/signin)                        │    │
-│  │  - Dashboard (compact VPS stats, charts, activity)  │    │
-│  │  - Channel Manager (multi-API, per-channel content) │    │
-│  │  - Stream Manager (scheduling, FFmpeg, auto-create) │    │
-│  │  - File Manager (PC + Google Drive, per-channel)    │    │
-│  │  - Settings (update checker, backups, system info)  │    │
-│  │  - TanStack Query for server state                  │    │
-│  │  - Socket.io client for real-time updates           │    │
-│  └─────────────────────────────────────────────────────┘    │
-└──────────┬───────────────────────────────┬──────────────────┘
-           │ HTTPS                         │ WebSocket (port 3003)
-┌──────────▼──────────────────┐  ┌────────▼──────────────────┐
-│     VPS (Next.js server)    │  │  Realtime Service          │
-│  ┌────────────────────────┐ │  │  (Socket.io mini-service)  │
-│  │  API Routes            │ │  │  - Polls DB every 5s       │
-│  │  - /api/auth/*         │ │  │  - Emits stream:status,    │
-│  │  - /api/channels/*     │ │  │    activity:new events     │
-│  │  - /api/streams/*      │ │  └───────────────────────────┘
-│  │  - /api/files/*        │ │
-│  │  - /api/system/*       │ │
-│  │  - /api/dashboard      │ │
-│  │  - /api/scheduler      │ │
-│  └──────────┬─────────────┘ │
-│             │               │
-│  ┌──────────▼─────────────┐ │
-│  │  Core Libraries        │ │
-│  │  - auth.ts (bcrypt+JWT)│ │
-│  │  - youtube.ts (API v3) │ │
-│  │  - ffmpeg.ts (spawn)   │ │
-│  │  - scheduler.ts (cron) │ │
-│  │  - system-stats.ts     │ │
-│  │  - gdrive.ts           │ │
-│  │  - backup.ts           │ │
-│  │  - cleanup.ts          │ │
-│  └──────────┬─────────────┘ │
-│             │               │
-│  ┌──────────▼─────────────┐ │
-│  │  Prisma ORM → SQLite   │ │
-│  │  9 models: User,       │ │
-│  │  Session, Channel,     │ │
-│  │  Stream, UploadedFile, │ │
-│  │  TitleItem,            │ │
-│  │  ThumbnailItem,        │ │
-│  │  SystemMetric,         │ │
-│  │  ActivityLog           │ │
-│  └────────────────────────┘ │
-│                             │
-│  ┌────────────────────────┐ │
-│  │  FFmpeg Binary         │ │
-│  │  (RTMP to YouTube)     │ │
-│  └────────────────────────┘ │
-└─────────────┬───────────────┘
-              │ RTMP
-              ▼
-   ┌──────────────────────┐
-   │  YouTube Live (RTMP) │
-   │  a.rtmp.youtube.com  │
-   └──────────────────────┘
-```
-
-### Why This Architecture Saves API Quota
-
-| Operation | Uses YouTube API? | Quota Cost |
-|-----------|-------------------|------------|
-| **Live video streaming** | ❌ No (stream key + RTMP) | **0 units** |
-| Create/Update broadcast | ✅ Yes | ~50 units |
-| Transition to complete | ✅ Yes | ~50 units |
-| Upload thumbnail | ✅ Yes | ~50 units |
-| Token refresh | ❌ No (uses refresh token) | **0 units** |
-
-A typical 4-hour stream costs **~150 API units** total. With 10,000 units/day per channel, you can run **60+ streams per day per channel** — and with multi-channel support, that multiplies accordingly.
 
 ---
 
@@ -306,12 +218,6 @@ sudo dnf install -y ffmpeg
 brew install ffmpeg
 ```
 
-Verify installation:
-```bash
-ffmpeg -version
-ffprobe -version
-```
-
 ### 1. Clone the Repository
 
 ```bash
@@ -322,11 +228,13 @@ cd ZephyrStream
 ### 2. Install Dependencies
 
 ```bash
-# Using Bun (recommended — faster)
+# Main app
 bun install
 
-# Or using npm
-npm install
+# Realtime service
+cd mini-services/realtime
+bun install
+cd ../..
 ```
 
 ### 3. Configure Environment
@@ -335,16 +243,10 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env` and **change the `JWT_SECRET`** to a long random string:
-
-```bash
-# Generate a secure secret
-openssl rand -base64 64
-```
-
+Edit `.env`:
 ```env
-DATABASE_URL=file:/path/to/your/custom.db
-JWT_SECRET=your-generated-secret-here
+DATABASE_URL=file:/home/YOUR_USERNAME/ZephyrStream/db/custom.db
+JWT_SECRET=generate_with_openssl_rand_base64_64
 FFMPEG_PATH=ffmpeg
 FFPROBE_PATH=ffprobe
 ```
@@ -353,12 +255,9 @@ FFPROBE_PATH=ffprobe
 
 ```bash
 bun run db:push
-
-# Or with npm
-npx prisma db push
 ```
 
-### 5. Start the App + Realtime Service
+### 5. Run Development
 
 ```bash
 # Terminal 1: Main app (port 3000)
@@ -366,26 +265,41 @@ bun run dev
 
 # Terminal 2: Realtime service (port 3003)
 cd mini-services/realtime
-bun install
 bun run dev
 ```
 
-Visit `http://localhost:3000` in your browser.
-
-### 6. Production Build (for VPS deployment)
+### 6. Production Build & Deploy
 
 ```bash
-# Build the standalone production bundle
+# Build
 bun run build
 
-# Start the production server
+# Start main app
 bun run start
 
-# In a separate terminal, start the realtime service
+# Terminal 2: Start realtime service
 cd mini-services/realtime
-bun install
 bun run dev
 ```
+
+### 7. Systemd Service (Auto-Start on Boot)
+
+```bash
+# One-command setup
+sudo bash deploy/install-services.sh
+
+# Commands:
+sudo systemctl status zephystream
+sudo systemctl restart zephystream
+sudo journalctl -u zephystream -f
+```
+
+### Access the App
+
+- **Development:** `http://IP-VPS:3000`
+- **Production (with domain):** `https://your-domain.com` (use Nginx/Caddy reverse proxy)
+
+> **Note:** You do NOT need a domain. You can access via `http://IP-VPS:3000` directly.
 
 ---
 
@@ -395,88 +309,113 @@ bun run dev
 
 1. Open the app in your browser
 2. Click **"Sign up"**
-3. Enter your name, email, and password (min 8 chars, 1 letter, 1 number)
-4. You'll be automatically signed in
+3. Enter name, email, password (min 8 chars, 1 letter, 1 number)
 
 ### Step 2: Add a YouTube Channel
 
-Each channel needs its own Google Cloud Console OAuth credentials:
-
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project (or use an existing one)
-3. Enable the **YouTube Data API v3**
-4. Go to **APIs & Services → Credentials**
-5. Click **Create Credentials → OAuth client ID**
-6. Choose **Desktop app**
-7. Copy the **Client ID** and **Client Secret**
-8. In ZephyrStream, go to **Channels → Add Channel**
-9. Enter a name, your Client ID, and Client Secret
-10. Click **Create Channel** → authorization page opens
-11. Sign in with your YouTube account, copy the authorization code
-12. Paste it back in ZephyrStream and click **Connect Channel**
+2. Create project → Enable **YouTube Data API v3**
+3. **APIs & Services → Credentials → Create Credentials → OAuth client ID → Desktop app**
+4. Copy **Client ID** and **Client Secret**
+5. In ZephyrStream: **Channels → Add Channel** → enter name, Client ID, Client Secret
+6. Click **Create Channel** → authorization page opens
+7. Sign in with YouTube account, copy code, paste back → **Connect Channel**
 
-The app proactively refreshes access tokens — **no re-authorization needed** as long as the refresh token is valid.
+Tokens are auto-refreshed — no re-authorization needed.
 
 ### Step 3: Manage Channel Content
 
-Click any channel card to open its detail view:
-- **Stream Titles** — add titles (single or bulk paste), toggle on/off, shuffle
-- **Thumbnails** — upload images, shuffle, delete
-- **Video Files** — upload from PC, shuffle, delete
+Click any channel card to open detail view:
+- **Stream Titles** — add (single/bulk), toggle, shuffle, delete
+- **Thumbnails** — upload images (from PC), shuffle, delete
+- **Video Files** — upload from PC or Google Drive, shuffle, delete
 
-Titles and thumbnails are **picked at schedule creation time** — each new schedule gets the next title/thumbnail in the rotation.
+Titles and thumbnails are **picked at schedule creation time**.
 
 ### Step 4: Create a Live Stream Schedule
 
-1. Go to **Streams → New Stream**
-2. Fill in the **Basic** tab:
-   - Stream name, description (with `[title]` variable buttons)
-   - Select a connected channel
-   - **YouTube Stream Key** (from YouTube Studio → Go live → Stream settings)
-   - **Duration** — min/max hours (randomized at start)
-   - **Schedule** — pick date & time for auto-start
-   - **Auto Create Next Schedule** — toggle for daily auto-reschedule
-   - Post-live replay status (Public / Unlisted / Random Unlisted)
-   - Category, tags, playlist ID
-   - Altered Content flag
-3. Configure the **Source** tab — select uploaded files or local path
-4. Configure the **FFmpeg** tab — encoder, resolution, bitrate, preset
-5. (Optional) Configure the **Spinner** tab for anti-spam emoji variation
-6. Click **Create Stream** — title & thumbnail are picked from the channel's rotator
+1. **Streams → New Stream**
+2. **Basic tab:** name, description, channel, stream key, duration (hours), schedule date/time, auto-create schedule, privacy, category, tags, playlist ID, altered content
+3. **Source tab:** select uploaded files or local path
+4. **FFmpeg tab:** encoder, resolution, bitrate, preset
+5. **Spinner tab:** anti-spam emoji variation
+6. (Optional) **Load from template** to pre-fill config
+7. Click **Create Stream**
 
 ### Step 5: Stream Lifecycle
 
 ```
-Schedule created (title + thumbnail picked)
+Schedule created (title + thumbnail picked from rotator)
     ↓
 Scheduler auto-starts at scheduled time
-    → FFmpeg pushes video to YouTube via stream key
+    → FFmpeg pushes video to YouTube via stream key (0 API quota)
     → YouTube broadcast created/updated via API
     ↓
-Stream is LIVE
-    → Real-time WebSocket updates push to browser
+Stream is LIVE (real-time WebSocket updates to browser)
     → Auto-stop when max duration reached
     ↓
 Stream ends (manual stop, auto-stop, or FFmpeg crash)
-    → YouTube broadcast transitioned to "complete" (with retry)
+    → YouTube broadcast transitioned to "complete" (5x retry with backoff)
+    → Auto-restart FFmpeg if crashed (3x retry)
     → If autoCreateSchedule: next-day schedule created (startAt + 24h)
-    → If manual stop: user chooses "Stop & Reschedule" or "Stop Only"
+    → Manual stop: choose "Stop & Reschedule" or "Stop Only"
     ↓
 Next day: cycle repeats
 ```
 
 ---
 
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Browser (Client)                          │
+│  Next.js 16 (React 19 + TypeScript)                         │
+│  - Dashboard / Channels / Streams / Files / Settings        │
+│  - Socket.io client for real-time updates                   │
+│  - TanStack Query for server state                          │
+└──────────┬───────────────────────────────┬──────────────────┘
+           │ HTTP                          │ WebSocket
+┌──────────▼──────────────────┐  ┌────────▼──────────────────┐
+│     VPS (Next.js :3000)     │  │  Realtime Service (:3003)  │
+│  API Routes + Scheduler     │  │  Socket.io — polls DB 5s   │
+│  - auth, channels, streams  │  │  Emits: stream:status,     │
+│  - files, system, backup    │  │  activity:new, errors      │
+│  - templates, quota, batch  │  └───────────────────────────┘
+│  Core: youtube.ts, ffmpeg   │
+│  scheduler.ts, backup.ts    │
+│  cleanup.ts, system-stats   │
+│  Prisma → SQLite (10 models)│
+│  FFmpeg (RTMP to YouTube)   │
+└─────────────┬───────────────┘
+              │ RTMP (stream key, 0 API quota)
+              ▼
+   ┌──────────────────────┐
+   │  YouTube Live (RTMP) │
+   └──────────────────────┘
+```
+
+### API Quota Savings
+
+| Operation | YouTube API? | Cost |
+|-----------|-------------|------|
+| **Live streaming** | ❌ No (stream key) | **0 units** |
+| Create/Update broadcast | ✅ Yes | ~100 units |
+| Transition to complete | ✅ Yes | ~50 units |
+| Token refresh | ❌ No | **0 units** |
+
+~150 units per stream. 10,000/day per channel = **60+ streams/day/channel**.
+
+---
+
 ## 🛠️ Development
 
-### Available Scripts
-
 ```bash
-bun run dev          # Start dev server (port 3000)
+bun run dev          # Dev server (port 3000)
 bun run build        # Production build
-bun run start        # Start production server
-bun run lint         # Run ESLint
-bun run db:push      # Push Prisma schema to database
+bun run start        # Production server
+bun run lint         # ESLint
+bun run db:push      # Push Prisma schema
 bun run db:generate  # Regenerate Prisma Client
 ```
 
@@ -484,145 +423,44 @@ bun run db:generate  # Regenerate Prisma Client
 
 ```
 ZephyrStream/
-├── prisma/
-│   └── schema.prisma              # Database schema (9 models)
-├── mini-services/
-│   └── realtime/                  # Socket.io real-time service (port 3003)
-├── public/
-│   ├── uploads/                   # User-uploaded video files (per-channel)
-│   └── logo.svg                   # App logo
+├── deploy/                        # Systemd service files + installer
+├── mini-services/realtime/        # Socket.io service (port 3003)
+├── prisma/schema.prisma           # 10 models
 ├── src/
-│   ├── app/
-│   │   ├── api/                   # API routes
-│   │   │   ├── auth/              # signup, signin, signout, me
-│   │   │   ├── channels/          # CRUD + OAuth + exchange-code
-│   │   │   ├── streams/           # CRUD + start/stop/log + duplicate
-│   │   │   ├── files/             # upload + google-drive + shuffle
-│   │   │   ├── titles/            # CRUD + bulk + shuffle + delete-all
-│   │   │   ├── thumbnails/        # CRUD + shuffle + delete-all + serve
-│   │   │   ├── system/            # stats + time + cleanup + ffmpeg + update + backup
-│   │   │   ├── scheduler/         # Start/status scheduler
-│   │   │   ├── dashboard/         # Aggregated summary
-│   │   │   └── activity-logs/     # Activity history
-│   │   ├── globals.css            # Theme (elegant black)
-│   │   ├── layout.tsx             # Root layout + providers + scheduler bootstrap
-│   │   └── page.tsx               # Main SPA entry
-│   ├── components/
-│   │   ├── auth/                  # AuthForm
-│   │   ├── layout/                # Sidebar, Header, MobileNav, ServerClock
-│   │   ├── dashboard/             # StatsCards, MetricChart, ActivityFeed, etc.
-│   │   ├── channels/              # ChannelList, ChannelForm, TitleManager, ThumbnailManager
-│   │   ├── streams/               # StreamList, StreamForm
-│   │   ├── files/                 # FileManager
-│   │   ├── common/                # Logo, StatusBadge
-│   │   ├── providers.tsx          # QueryClientProvider
-│   │   └── ui/                    # shadcn/ui components
-│   ├── hooks/
-│   │   ├── use-realtime.ts        # Socket.io client hook
-│   │   ├── use-toast.ts           # Toast notifications
-│   │   └── use-mobile.ts          # Mobile detection
-│   └── lib/
-│       ├── auth.ts                # JWT + bcrypt
-│       ├── backup.ts              # Database backup service
-│       ├── cleanup.ts             # Auto cleanup service
-│       ├── constants.ts           # App constants, version, catalogs
-│       ├── db.ts                  # Prisma client
-│       ├── ffmpeg.ts              # FFmpeg spawn + concat + probe
-│       ├── gdrive.ts              # Google Drive API
-│       ├── scheduler.ts           # Auto-start/stop/restart/refresh + node-cron
-│       ├── system-stats.ts        # VPS monitoring (CPU, RAM, Disk, Network)
-│       ├── youtube.ts             # YouTube Data API v3 + rotator + retry
-│       └── utils.ts               # cn() helper
-├── backups/                       # Auto database backups (7-day retention)
-├── logs/streams/                  # FFmpeg stream logs (7-day retention)
-├── .env.example                   # Environment template
-├── package.json
-└── README.md                      # This file
+│   ├── app/api/                   # 25+ API routes
+│   ├── components/                # UI components
+│   ├── hooks/                     # use-realtime, use-toast
+│   └── lib/                       # auth, youtube, ffmpeg, scheduler, backup, cleanup
+├── backups/                       # Auto DB backups (7-day retention)
+├── .env.example
+└── package.json
 ```
 
-### Database Schema (9 models)
+### Database Schema (10 models)
 
-- **User** — email, passwordHash, name, role
-- **Session** — JWT token tracking
-- **Channel** — YouTube channel with OAuth credentials + rotator indexes
-- **Stream** — Live stream config + resolved title/thumbnail + retryCount
-- **UploadedFile** — Video files (per-channel, local or Google Drive)
-- **TitleItem** — Per-channel title list with sortOrder + enabled flag
-- **ThumbnailItem** — Per-channel thumbnail images with sortOrder
-- **SystemMetric** — Historical VPS metrics (24h retention)
-- **ActivityLog** — Audit trail (30-day retention)
-
----
-
-## 🔒 Security Notes
-
-- **Passwords** hashed with bcrypt (12 salt rounds)
-- **JWT tokens** signed with `JWT_SECRET`, stored in HttpOnly cookies
-- **Cookies** secure (HTTPS-only in production), `sameSite: lax`
-- **OAuth credentials** stored in database (consider encrypting at rest for production)
-- **File uploads** sanitized (filename characters restricted)
-- **Per-user data isolation** — every query scoped to authenticated user
-- **Backup filename validation** — regex prevents directory traversal
+User, Session, Channel, Stream, UploadedFile, TitleItem, ThumbnailItem, SystemMetric, ActivityLog, StreamTemplate
 
 ---
 
 ## ❓ Troubleshooting
 
-### FFmpeg not detected
-- Verify: `ffmpeg -version`
-- Set `FFMPEG_PATH` and `FFPROBE_PATH` in `.env` if not in PATH
-
-### Google OAuth fails
-- Ensure YouTube Data API v3 is enabled in Google Cloud Console
-- Redirect URI: `urn:ietf:wg:oauth:2.0:oob` (Desktop app)
-- Token refresh is automatic — no re-authorization needed
-
-### Stream won't start
-- Check FFmpeg is installed
-- Verify YouTube stream key is valid
-- Check stream log (click **Log** in Streams list)
-- Ensure source video files exist
-
-### Realtime not connecting
-- Ensure realtime service is running on port 3003
-- Check browser console for connection errors
-- App falls back to direct connection if gateway fails
-
-### Database backup fails
-- Ensure `sqlite3` CLI is installed (falls back to file copy)
-- Check `backups/` directory is writable
+| Issue | Solution |
+|-------|----------|
+| **Build fails** | `NODE_ENV=production bun run build` (v1.3.1+ does this automatically) |
+| **`cd mini-services/realtime: No such file`** | Fixed in v1.3.1 — `git pull` to get latest |
+| **FFmpeg not found** | `sudo apt install ffmpeg` or set `FFMPEG_PATH` in `.env` |
+| **Google OAuth fails** | Ensure YouTube Data API v3 enabled; redirect URI = `urn:ietf:wg:oauth:2.0:oob` |
+| **Realtime not connecting** | Start realtime service: `cd mini-services/realtime && bun install && bun run dev` |
+| **Database error** | `mkdir -p db && bun run db:push` |
+| **Stream won't start** | Check FFmpeg installed, stream key valid, video files exist |
+| **Can't access from browser** | Open port 3000 + 3003 in firewall, use `http://IP-VPS:3000` |
 
 ---
 
 ## 📄 License
 
-Personal use. Inspired by the original Zephyr Streamer desktop app (PyQt6), reimplemented from scratch as a web application with new features and design.
+Personal use. Inspired by the original Zephyr Streamer (PyQt6), reimplemented from scratch.
 
 ---
 
-## 🙏 Acknowledgments
-
-- Original *Zephyr Streamer* — desktop app that inspired this project
-- [Next.js](https://nextjs.org/) — React framework
-- [Prisma](https://prisma.io/) — Database ORM
-- [shadcn/ui](https://ui.shadcn.com/) — UI components
-- [TanStack Query](https://tanstack.com/query) — Server state
-- [Socket.io](https://socket.io/) — Real-time updates
-- [node-cron](https://github.com/node-cron/node-cron) — Persistent scheduler
-- [googleapis](https://github.com/googleapis/google-api-nodejs-client) — YouTube + Drive API
-- [systeminformation](https://github.com/sebhildebrandt/systeminformation) — VPS metrics
-- [FFmpeg](https://ffmpeg.org/) — Video streaming
-
----
-
-## 📞 Support
-
-For issues, feature requests, or questions, please open an issue on [GitHub](https://github.com/lailiaindah/ZephyrStream/issues).
-
----
-
-<<<<<<< HEAD
-**ZephyrStream v1.3.0** — Built with ❤️ for the streaming community.
-=======
-**ZephyrStream v1.2.3** — Built with ❤️ for the streaming community.
->>>>>>> 56fa230deb94cfd4b4724a5bb1d4c9fe05dcb1f4
+**ZephyrStream v1.3.1** — Built with ❤️ for the streaming community.
