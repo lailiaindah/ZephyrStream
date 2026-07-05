@@ -70,11 +70,18 @@ function StreamFormInner({
   const [shuffle, setShuffle] = useState(editingStream?.shuffle ?? true);
   const [minHours, setMinHours] = useState(editingStream?.minHours ?? 2);
   const [maxHours, setMaxHours] = useState(editingStream?.maxHours ?? 4);
-  const [startAt, setStartAt] = useState<string>(
-    editingStream?.startAt
-      ? new Date(editingStream.startAt).toISOString().slice(0, 16)
-      : ""
-  );
+  // Convert the stored UTC startAt to the user's LOCAL timezone for the
+  // datetime-local input. Previously this used toISOString().slice(0,16)
+  // which produces a UTC string — the browser interprets it as local time,
+  // causing the scheduled time to shift by the user's UTC offset on every
+  // save. Now we format the Date in local time, which round-trips correctly.
+  const [startAt, setStartAt] = useState<string>(() => {
+    if (!editingStream?.startAt) return "";
+    const d = new Date(editingStream.startAt);
+    // Format as YYYY-MM-DDTHH:MM in local time
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  });
   const [autoCreateSchedule, setAutoCreateSchedule] = useState(
     editingStream?.autoCreateSchedule ?? false
   );

@@ -256,15 +256,24 @@ export async function POST(
       throw dbErr;
     }
 
-    await db.activityLog.create({
-      data: {
-        userId: user.id,
-        level: "success",
-        category: "stream",
-        message: `Stream started: ${stream.name}`,
-        details: `PID: ${pid}`,
-      },
-    });
+    // Activity log is non-critical — wrap in its own try/catch so a
+    // failure (e.g., SQLite busy) doesn't propagate to the outer catch
+    // and mark the stream as "error" even though FFmpeg is actively
+    // streaming to YouTube. Previously, a DB error here would orphan
+    // the live stream (status=error but FFmpeg running, no way to stop).
+    try {
+      await db.activityLog.create({
+        data: {
+          userId: user.id,
+          level: "success",
+          category: "stream",
+          message: `Stream started: ${stream.name}`,
+          details: `PID: ${pid}`,
+        },
+      });
+    } catch (logErr) {
+      console.warn("[Start] Failed to create activity log (non-fatal):", logErr);
+    }
 
     return NextResponse.json({
       success: true,

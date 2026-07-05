@@ -42,25 +42,39 @@ export async function POST(req: NextRequest) {
           results.push({ id, success: true, action: "deleted" });
         }
         else if (action === "stop") {
-          if (stream.status !== "live" && stream.status !== "preparing") {
-            results.push({ id, success: false, error: "Not running" }); continue;
+          // ATOMIC CLAIM: prevent double-stop when two concurrent batch
+          // requests (or scheduler + manual) race for the same stream.
+          // Same pattern as the single-stream stop route.
+          const claim = await db.stream.updateMany({
+            where: { id, status: { in: ["live", "preparing"] } },
+            data: { status: "stopping" },
+          });
+          if (claim.count === 0) {
+            results.push({ id, success: false, error: "Not running or already stopping" });
+            continue;
           }
-          if (stream.pid) await stopFFmpegStream(stream.pid);
+          // Re-fetch to get the latest pid (may have changed)
+          const freshStream = await db.stream.findFirst({ where: { id, userId: user.id } });
+          if (!freshStream) {
+            results.push({ id, success: false, error: "Not found" });
+            continue;
+          }
+          if (freshStream.pid) await stopFFmpegStream(freshStream.pid);
           // Capture YouTube transition errors instead of silently
           // swallowing — log them so the user knows YouTube may need
           // manual attention. Previously the empty catch {} hid all
           // failures, reporting success even when the broadcast stayed
           // in "live" state on YouTube's side.
-          if (stream.channelId && stream.broadcastId) {
+          if (freshStream.channelId && freshStream.broadcastId) {
             try {
-              await transitionBroadcast(stream.channelId, stream.broadcastId, "complete");
+              await transitionBroadcast(freshStream.channelId, freshStream.broadcastId, "complete");
             } catch (ytErr: any) {
               await db.activityLog.create({
                 data: {
                   userId: user.id,
                   level: "warn",
                   category: "stream",
-                  message: `Batch stop: YouTube transition failed for ${stream.name}`,
+                  message: `Batch stop: YouTube transition failed for ${freshStream.name}`,
                   details: ytErr.message,
                 },
               }).catch(() => {});
@@ -72,16 +86,16 @@ export async function POST(req: NextRequest) {
           // same behavior as the single-stream stop endpoint. Without
           // this, batch-stopping streams with autoCreateSchedule=true
           // would silently break the daily auto-streaming chain.
-          if (stream.autoCreateSchedule) {
+          if (freshStream.autoCreateSchedule) {
             try {
-              await createNextDaySchedule(stream);
+              await createNextDaySchedule(freshStream);
             } catch (schedErr: any) {
               await db.activityLog.create({
                 data: {
                   userId: user.id,
                   level: "warn",
                   category: "stream",
-                  message: `Batch stop: next-day schedule failed for ${stream.name}`,
+                  message: `Batch stop: next-day schedule failed for ${freshStream.name}`,
                   details: schedErr.message,
                 },
               }).catch(() => {});

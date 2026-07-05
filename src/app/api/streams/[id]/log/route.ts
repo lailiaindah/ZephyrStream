@@ -35,7 +35,10 @@ export async function GET(
     }
 
     const log = await readStreamLog(stream.logFile, lines);
-    return NextResponse.json({ log, logFile: stream.logFile });
+    // Don't return the server-side filesystem path to the client —
+    // it's unnecessary information disclosure that reveals the server's
+    // directory structure.
+    return NextResponse.json({ log });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

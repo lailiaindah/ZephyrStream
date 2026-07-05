@@ -12,11 +12,30 @@ export async function GET() {
     const channels = await db.channel.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
-      include: {
-        // IMPORTANT: include counts for ALL related entities that the
-        // channel-list UI displays (Streams, Files, Titles, Thumbnails).
-        // Previously only `streams` was included, so the Files/Titles/Thumbs
-        // badges always showed 0 even after uploading items.
+      // SECURITY: use `select` to exclude sensitive OAuth fields
+      // (accessToken, refreshToken) from the response. Previously these
+      // were returned to the browser on every channel list fetch — an
+      // XSS or malicious extension could exfiltrate them and impersonate
+      // the user's YouTube channels indefinitely (refresh tokens don't
+      // expire). clientId and clientSecret are still included because
+      // the channel edit form needs them for pre-filling.
+      select: {
+        id: true,
+        userId: true,
+        name: true,
+        description: true,
+        youtubeChannelId: true,
+        youtubeChannelName: true,
+        clientId: true,
+        clientSecret: true,
+        // accessToken and refreshToken are EXCLUDED
+        tokenExpiresAt: true,
+        status: true,
+        lastSyncAt: true,
+        titleRotatorIndex: true,
+        thumbnailRotatorIndex: true,
+        createdAt: true,
+        updatedAt: true,
         _count: {
           select: {
             streams: true,

@@ -2,7 +2,7 @@
 // GET  /api/scheduler — Get scheduler status
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { startScheduler } from "@/lib/scheduler";
+import { startScheduler, isSchedulerRunning } from "@/lib/scheduler";
 import { canAccessSystemEndpoints } from "@/lib/access-control";
 
 export async function POST() {
@@ -28,7 +28,10 @@ export async function GET() {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    return NextResponse.json({ running: true });
+    // Return the ACTUAL running state, not a hardcoded true.
+    // The scheduler may not be running if the server just booted and
+    // instrumentation.ts hasn't run yet (or failed).
+    return NextResponse.json({ running: isSchedulerRunning() });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

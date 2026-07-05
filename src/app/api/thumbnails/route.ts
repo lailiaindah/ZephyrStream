@@ -99,7 +99,14 @@ export async function POST(req: NextRequest) {
         continue; // Skip non-image files
       }
 
-      const safeName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      // Add random suffix to prevent collisions + enforce 10MB max size
+      // (prevents OOM from a 2GB file named "exploit.jpg" — the extension
+      // check only filters by name, not actual content).
+      if (file.size > 10 * 1024 * 1024) {
+        continue; // Skip files larger than 10MB
+      }
+      const randomSuffix = Math.random().toString(36).slice(2, 8);
+      const safeName = `${Date.now()}-${randomSuffix}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
       const filePath = path.join(thumbDir, safeName);
 
       // Write file to disk

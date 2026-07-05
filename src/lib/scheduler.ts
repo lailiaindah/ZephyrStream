@@ -787,3 +787,9 @@ export function stopScheduler() {
   }
   console.log("[Scheduler] Stopped");
 }
+
+// Returns true if the scheduler is currently running (cronJob is set).
+// Used by the GET /api/scheduler endpoint to report actual state.
+export function isSchedulerRunning(): boolean {
+  return cronJob !== null;
+}

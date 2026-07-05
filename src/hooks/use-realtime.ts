@@ -28,71 +28,74 @@ export function useRealtimeUpdates() {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    let socket: Socket;
+    let socket: Socket | null = null;
     let fallbackTimer: ReturnType<typeof setTimeout>;
     let disposed = false;
 
-    try {
-      // Build the direct-connect URL from the current page's hostname.
-      // We CANNOT use "localhost" because in the user's browser that
-      // resolves to their own machine — the realtime service runs on the
-      // VPS, not the user's machine. Using window.location.hostname ensures
-      // we point at the same host the web app is served from.
-      const proto = window.location.protocol; // http: or https:
-      const host = window.location.hostname;  // VPS IP or domain
-      const directUrl = `${proto}//${host}:3003`;
+    // Use an async IIFE because useEffect can't be async, but we need
+    // to await the token fetch before connecting.
+    (async () => {
+      if (disposed) return;
 
-      // Try gateway first (works when Caddy is in front)
-      socket = io("/?XTransformPort=3003", {
-        transports: ["websocket", "polling"],
-        reconnection: true,
-        reconnectionDelay: 2000,
-        reconnectionAttempts: 5,
-        timeout: 5000,
-      });
+      try {
+        const proto = window.location.protocol;
+        const host = window.location.hostname;
+        const directUrl = `${proto}//${host}:3003`;
 
-      // If gateway doesn't work after 3s, try direct connection to port 3003
-      fallbackTimer = setTimeout(() => {
-        if (disposed) return;
-        if (!socket.connected) {
-          console.log("[Realtime] Gateway connection failed, trying direct:", directUrl);
-          // CRITICAL: removeAllListeners before disconnect, otherwise the
-          // old socket's "disconnect" event will fire after we've already
-          // connected via the new socket — and clobber `connected` back
-          // to false. This was the root cause of "Realtime Offline"
-          // showing even when the direct connection was actually live.
-          socket.removeAllListeners();
-          socket.disconnect();
-          socket = io(directUrl, {
-            transports: ["websocket", "polling"],
-            reconnection: true,
-            reconnectionDelay: 2000,
-            reconnectionAttempts: 10,
-            timeout: 5000,
-          });
-          setupHandlers(socket);
-          socketRef.current = socket;
+        // Fetch a JWT token for realtime service auth. The session cookie
+        // is HttpOnly so JS can't read it — this endpoint returns the
+        // token value so we can pass it via socket.io's auth handshake.
+        let realtimeToken: string | undefined;
+        try {
+          const tokenRes = await fetch("/api/auth/realtime-token", { method: "POST" });
+          if (tokenRes.ok) {
+            const tokenData = await tokenRes.json();
+            realtimeToken = tokenData.token;
+          }
+        } catch {
+          // Token fetch failed — realtime will just stay offline
         }
-      }, 3000);
 
-      socketRef.current = socket;
-      setupHandlers(socket);
+        if (disposed) return;
 
-      // Clear fallback timer on successful connection
-      socket.on("connect", () => {
-        clearTimeout(fallbackTimer);
-      });
+        const socketOptions = {
+          transports: ["websocket", "polling"] as const,
+          reconnection: true,
+          reconnectionDelay: 2000,
+          reconnectionAttempts: 5,
+          timeout: 5000,
+          auth: realtimeToken ? { token: realtimeToken } : undefined,
+        };
 
-      return () => {
-        disposed = true;
-        clearTimeout(fallbackTimer);
-        socket.disconnect();
-        socketRef.current = null;
-      };
-    } catch (err) {
-      console.error("[Realtime] Failed to initialize:", err);
-      return;
-    }
+        // Try gateway first (works when Caddy is in front)
+        socket = io("/?XTransformPort=3003", socketOptions);
+
+        // If gateway doesn't work after 3s, try direct connection to port 3003
+        fallbackTimer = setTimeout(() => {
+          if (disposed || !socket) return;
+          if (!socket.connected) {
+            console.log("[Realtime] Gateway connection failed, trying direct:", directUrl);
+            socket.removeAllListeners();
+            socket.disconnect();
+            socket = io(directUrl, {
+              ...socketOptions,
+              reconnectionAttempts: 10,
+            });
+            setupHandlers(socket);
+            socketRef.current = socket;
+          }
+        }, 3000);
+
+        socketRef.current = socket;
+        setupHandlers(socket);
+
+        socket.on("connect", () => {
+          clearTimeout(fallbackTimer);
+        });
+      } catch (err) {
+        console.error("[Realtime] Failed to initialize:", err);
+      }
+    })();
 
     function setupHandlers(s: Socket) {
       s.on("connect", () => {
@@ -106,51 +109,44 @@ export function useRealtimeUpdates() {
       });
 
       s.on("connect_error", (err: any) => {
-        // Log connection errors at debug level — these are expected when
-        // the realtime service is not running or the network blocks the
-        // port. We don't want to spam the console.
         console.debug("[Realtime] Connect error:", err.message);
       });
 
-      // Stream status changed
       s.on("stream:status", (data: any) => {
-        console.log("[Realtime] Stream status:", data);
         queryClient.invalidateQueries({ queryKey: ["streams"] });
         queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-
         if (data.status === "live") {
           toast.success(`Stream live: ${data.name}`);
         } else if (data.status === "error") {
-          toast.error(`Stream error: ${data.name}`, {
-            description: data.lastError || "Unknown error",
-          });
+          toast.error(`Stream error: ${data.name}`, { description: data.lastError || "Unknown error" });
         } else if (data.status === "ended") {
           toast.info(`Stream ended: ${data.name}`);
         }
       });
 
-      // Stream error (detailed)
       s.on("stream:error", (data: any) => {
-        console.log("[Realtime] Stream error:", data);
-        toast.error(`Stream error: ${data.name}`, {
-          description: data.error,
-        });
+        toast.error(`Stream error: ${data.name}`, { description: data.error });
       });
 
-      // New activity log
-      s.on("activity:new", (data: any) => {
-        console.log("[Realtime] New activity:", data);
+      s.on("activity:new", () => {
         queryClient.invalidateQueries({ queryKey: ["dashboard"] });
         queryClient.invalidateQueries({ queryKey: ["notifications"] });
         queryClient.invalidateQueries({ queryKey: ["activity-logs"] });
       });
 
-      // Initial snapshot of live streams
-      s.on("stream:snapshot", (data: any) => {
-        console.log("[Realtime] Live streams snapshot:", data.liveStreams?.length || 0, "live");
+      s.on("stream:snapshot", () => {
         queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       });
     }
+
+    return () => {
+      disposed = true;
+      clearTimeout(fallbackTimer);
+      if (socket) {
+        socket.disconnect();
+      }
+      socketRef.current = null;
+    };
   }, [queryClient]);
 
   const subscribeToStreamLog = (streamId: string) => {

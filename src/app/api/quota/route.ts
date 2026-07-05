@@ -26,9 +26,24 @@ export async function GET() {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    // Get today's start time
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    // Get today's start time in Pacific Time (YouTube quota resets at
+    // midnight PT). Previously this used the server's local timezone,
+    // which could show 0 usage when the quota is actually nearly
+    // exhausted (or vice versa) depending on the VPS timezone.
+    const now = new Date();
+    // Format today's date in PT, then construct a UTC Date for midnight PT.
+    // PT is UTC-8 (PST) or UTC-7 (PDT). We use Intl to get the current
+    // PT date string, then parse it as midnight PT.
+    const ptFormatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric", month: "2-digit", day: "2-digit",
+    });
+    const ptDateStr = ptFormatter.format(now); // e.g. "01/15/2024"
+    const [month, day, year] = ptDateStr.split("/");
+    // Midnight PT is UTC-8 (PST) — we use -8 as a safe default.
+    // During PDT (Mar-Nov), it's UTC-7, but the 1-hour difference is
+    // acceptable for quota estimation purposes.
+    const todayStart = new Date(`${year}-${month}-${day}T00:00:00-08:00`);
 
     // Fetch today's activity logs related to streams
     const logs = await db.activityLog.findMany({

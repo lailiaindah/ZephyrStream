@@ -47,7 +47,8 @@ export async function POST(req: NextRequest) {
     const uploadDir = path.join(UPLOAD_DIR, "channels", channelId);
     await fs.mkdir(uploadDir, { recursive: true });
 
-    const safeName = `${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const randomSuffix = Math.random().toString(36).slice(2, 8);
+    const safeName = `${Date.now()}-${randomSuffix}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const localPath = path.join(uploadDir, safeName);
 
     // Download the file from Google Drive.
