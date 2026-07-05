@@ -1,6 +1,6 @@
 # ZephyrStream — Multi-Channel YouTube Live Streaming Platform
 
-**v1.3.1** — A self-hosted automated live streaming scheduler for YouTube, built with Next.js 16, TypeScript, Prisma, and FFmpeg. Designed to be installed on a VPS and managed from any browser.
+**v1.4.4** — A self-hosted automated live streaming scheduler for YouTube, built with Next.js 16, TypeScript, Prisma, and FFmpeg. Designed to be installed on a VPS and managed from any browser.
 
 > **Inspired by** the original *Zephyr Streamer* desktop app (PyQt6 + FFmpeg), this is a complete web reimplementation with a fresh design, new architecture, and many new features — built from scratch as a brand-new application.
 
@@ -477,8 +477,13 @@ User, Session, Channel, Stream, UploadedFile, TitleItem, ThumbnailItem, SystemMe
 |-------|----------|
 | **Build fails** | `NODE_ENV=production bun run build` (v1.3.1+ does this automatically) |
 | **`cd mini-services/realtime: No such file`** | Fixed in v1.3.1 — `git pull` to get latest |
+| **Google OAuth error (OOB blocked)** | Fixed in v1.4.0+ — use Web application type, redirect URI: `http://localhost:3000/api/channels/oauth-callback` |
+| **Thumbnail upload error (EROFS)** | Fixed in v1.4.3+ — paths now dynamic |
+| **Google Drive not working** | Fixed in v1.4.3+ — Drive scope added to OAuth |
+| **Dashboard shows "Unauthorized"** | Fixed in v1.3.3+ — cookie secure flag now conditional on HTTPS env var |
+| **Speed test / Backup / Update fails** | All require login — check if session cookie is set |
 | **FFmpeg not found** | `sudo apt install ffmpeg` or set `FFMPEG_PATH` in `.env` |
-| **Google OAuth fails** | Ensure YouTube Data API v3 enabled; redirect URI = `urn:ietf:wg:oauth:2.0:oob` |
+| **Google OAuth fails** | Use Web application type, redirect URI: `http://localhost:3000/api/channels/oauth-callback`. See Step 2 in Usage Guide. |
 | **Realtime not connecting** | Start realtime service: `cd mini-services/realtime && bun install && bun run dev` |
 | **Database error** | `mkdir -p db && bun run db:push` |
 | **Stream won't start** | Check FFmpeg installed, stream key valid, video files exist |
