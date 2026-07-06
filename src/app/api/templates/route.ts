@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
       encoder, copyMode, videoBitrate, audioBitrate, resolution, fps, preset,
       privacyStatus, categoryId, tags, playlistId, alteredContent,
       minHours, maxHours, spinnerMode, spinnerEmojis, autoCreateSchedule,
+      shuffleTitle, shuffleThumbnail,
     } = body;
 
     if (!name) return NextResponse.json({ error: "Template name is required" }, { status: 400 });
@@ -56,6 +57,8 @@ export async function POST(req: NextRequest) {
         spinnerMode: spinnerMode || "off",
         spinnerEmojis: spinnerEmojis || null,
         autoCreateSchedule: autoCreateSchedule ?? false,
+        shuffleTitle: shuffleTitle ?? false,
+        shuffleThumbnail: shuffleThumbnail ?? false,
       },
     });
 

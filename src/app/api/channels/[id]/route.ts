@@ -102,6 +102,9 @@ export async function PATCH(
       );
     }
 
+    // SECURITY: use `select` to exclude accessToken and refreshToken from
+    // the response — same protection as the GET endpoint. Without this,
+    // Prisma's update returns ALL scalar fields including the OAuth tokens.
     const updated = await db.channel.update({
       where: { id },
       data: {
@@ -110,6 +113,24 @@ export async function PATCH(
         ...(clientId !== undefined && { clientId }),
         ...(clientSecret !== undefined && { clientSecret }),
         ...(status !== undefined && { status }),
+      },
+      select: {
+        id: true,
+        userId: true,
+        name: true,
+        description: true,
+        youtubeChannelId: true,
+        youtubeChannelName: true,
+        clientId: true,
+        clientSecret: true,
+        // accessToken and refreshToken are EXCLUDED
+        tokenExpiresAt: true,
+        status: true,
+        lastSyncAt: true,
+        titleRotatorIndex: true,
+        thumbnailRotatorIndex: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 

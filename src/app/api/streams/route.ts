@@ -15,8 +15,8 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const channelId = searchParams.get("channelId");
 
-    // Verify channel ownership if channelId provided
-    if (channelId) {
+    // Verify channel ownership if channelId provided (but not "unassigned")
+    if (channelId && channelId !== "unassigned") {
       const channel = await db.channel.findFirst({
         where: { id: channelId, userId: user.id },
       });
@@ -26,7 +26,13 @@ export async function GET(req: NextRequest) {
     const streams = await db.stream.findMany({
       where: {
         userId: user.id,
-        ...(channelId ? { channelId } : {}),
+        // Handle "unassigned" sentinel: return streams with channelId=null.
+        // Same pattern as /api/files and /api/playlists.
+        ...(channelId === "unassigned"
+          ? { channelId: null }
+          : channelId
+          ? { channelId }
+          : {}),
       },
       orderBy: { createdAt: "desc" },
       include: {

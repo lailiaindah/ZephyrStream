@@ -82,16 +82,17 @@ export function StreamList() {
 
   const createMutation = useMutation({
     mutationFn: async (payload: any) => {
-      // Force the channelId to the selected one if locked.
-      // IMPORTANT: filter out the "unassigned" / "all" sentinel values —
-      // previously, when the channel filter was set to "Unassigned",
-      // payload.channelId was set to the literal string "unassigned",
-      // which the backend would reject (or store as an invalid FK).
+      // When a specific channel is locked (filter is set to a real
+      // channel, not "all"/"unassigned"), force the stream to use it.
+      // Otherwise, respect the channelId from the form (which may be a
+      // valid channel ID the user picked from the dropdown, or null).
+      // Previously this had an `else { payload.channelId = null }` branch
+      // that silently overrode the user's channel selection when the
+      // filter was "all" — the default view.
       if (selectedChannelId && selectedChannelId !== "unassigned" && selectedChannelId !== "all") {
         payload.channelId = selectedChannelId;
-      } else {
-        payload.channelId = null;
       }
+      // Else: use payload.channelId as-is from the form
       const res = await fetch("/api/streams", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
