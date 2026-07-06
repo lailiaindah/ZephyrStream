@@ -23,9 +23,6 @@ services:
       - zephyr-uploads:/app/public/uploads
       - zephyr-logs:/app/logs
       - zephyr-backups:/app/backups
-      # Bind-mount Ookla binary dari host (jika sudah diinstall)
-      # Jika tidak ada, app akan fallback ke Cloudflare speed test
-      - /usr/local/bin/speedtest:/usr/local/bin/speedtest:ro
     environment:
       - NODE_ENV=production
       - DATABASE_URL=file:/app/db/custom.db
