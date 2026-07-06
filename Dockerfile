@@ -41,8 +41,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Ookla Speedtest CLI
-RUN curl -sL https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-x86_64.tgz | tar xz -C /usr/local/bin speedtest
+# Install Ookla Speedtest CLI (optional — build continues if download fails)
+RUN curl -fsSL https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux-x86_64.tgz -o /tmp/speedtest.tgz && \
+    tar xzf /tmp/speedtest.tgz -C /usr/local/bin speedtest && \
+    rm -f /tmp/speedtest.tgz && \
+    chmod +x /usr/local/bin/speedtest || \
+    echo "WARNING: Ookla Speedtest CLI download failed — speed test will use Cloudflare fallback"
 
 # Copy built standalone app
 COPY --from=builder /app/.next/standalone ./
