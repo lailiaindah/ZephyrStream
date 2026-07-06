@@ -1,17 +1,27 @@
 // POST /api/channels/[id]/auth-url — Get the Google OAuth URL for this channel
 //
-// IMPORTANT: The redirect URI is derived from the request's own origin
-// (e.g. http://57.131.47.229:3000 or https://mydomain.com). Previously
-// this was hardcoded to http://localhost:3000 — which only works when
-// the user accesses the app from the VPS itself. For remote VPS access
-// via IP or domain, Google would redirect to the user's own localhost
-// (their personal machine), and the OAuth callback never reached the
-// server.
+// REDIRECT URI POLICY:
+// Google OAuth only allows these redirect URIs for HTTP (no HTTPS):
+//   - http://localhost:PORT/...  (for development/testing)
+//   - http://127.0.0.1:PORT/...  (same as localhost)
 //
-// The user MUST register this exact redirect URI in Google Cloud
-// Console → APIs & Services → Credentials → OAuth 2.0 Client ID →
-// Authorized redirect URIs. We return the redirectUri in the response
-// so the frontend can display it for the user to copy.
+// For non-localhost HTTP (e.g. http://57.131.47.229:3000), Google REJECTS
+// the request with "Error 400: invalid_request" because:
+//   1. Google doesn't allow bare IP addresses as redirect URIs
+//   2. Google requires HTTPS for non-localhost redirect URIs
+//
+// SOLUTION: Always use http://localhost:3000 as the redirect URI.
+// Since the user accesses the app remotely (not from localhost), Google
+// will redirect to http://localhost:3000/api/channels/oauth-callback?code=xxx
+// — which the user's browser can't reach (localhost on their machine
+// doesn't run the app). The user must then:
+//   1. Copy the full URL from the browser address bar (which contains the
+//      authorization code)
+//   2. Paste it into the "Exchange Code" dialog in ZephyrStream
+//
+// The user MUST register http://localhost:3000/api/channels/oauth-callback
+// in Google Cloud Console → Credentials → OAuth 2.0 Client ID →
+// Authorized redirect URIs.
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
@@ -33,10 +43,11 @@ export async function POST(
       return NextResponse.json({ error: "Channel not found" }, { status: 404 });
     }
 
-    // Derive the redirect URI from the request's own origin so Google
-    // redirects back to the same host the user is currently accessing.
-    const origin = new URL(req.url).origin;
-    const redirectUri = `${origin}/api/channels/oauth-callback`;
+    // Always use localhost:3000 as redirect URI — this is the only HTTP
+    // redirect URI that Google accepts without HTTPS/domain.
+    // The user will need to manually copy the redirect URL and paste it
+    // into the "Exchange Code" dialog after Google redirects.
+    const redirectUri = "http://localhost:3000/api/channels/oauth-callback";
 
     const authUrl = getAuthUrl(
       channel.clientId,

@@ -59,11 +59,11 @@ export async function GET(req: NextRequest) {
   const state = searchParams.get("state"); // channel ID
   const error = searchParams.get("error");
 
-  // Derive the app's own origin from the request URL. We use this as the
-  // postMessage target so only our own page can receive the message.
+  // Derive the app's own origin from the request URL for postMessage.
+  // The redirect URI is always localhost:3000 (see auth-url/route.ts).
   const appOrigin = `${new URL(req.url).origin}`;
 
-  const redirectUri = `${appOrigin}/api/channels/oauth-callback`;
+  const redirectUri = "http://localhost:3000/api/channels/oauth-callback";
 
   // If Google returned an error during authorization, just notify the
   // opener. We deliberately do NOT mutate the channel status here —
