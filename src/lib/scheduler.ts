@@ -547,6 +547,9 @@ async function startStreamInternal(stream: any) {
       category: "stream",
       message: `Stream auto-started: ${fresh.name}`,
       details: `PID: ${pid}`,
+      // Set quotaCost: 150 if broadcast was created (insert+bind+streamInsert),
+      // 50 if updated, 0 if no channel/broadcast.
+      quotaCost: fresh.channelId && fresh.channel?.status === "active" ? 150 : 0,
     },
   });
 }
@@ -623,6 +626,8 @@ async function stopStreamInternal(stream: any) {
       level: "info",
       category: "stream",
       message: `Stream auto-stopped: ${stream.name}`,
+      // Set quotaCost: 50 for transition to complete (if broadcast exists).
+      quotaCost: stream.channelId && stream.broadcastId ? 50 : 0,
     },
   });
 
