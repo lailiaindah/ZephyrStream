@@ -259,8 +259,9 @@ export async function POST(
     // Activity log is non-critical — wrap in its own try/catch so a
     // failure (e.g., SQLite busy) doesn't propagate to the outer catch
     // and mark the stream as "error" even though FFmpeg is actively
-    // streaming to YouTube. Previously, a DB error here would orphan
-    // the live stream (status=error but FFmpeg running, no way to stop).
+    // streaming to YouTube.
+    // Set quotaCost explicitly: broadcast insert (50) + liveStream insert (50)
+    // + bind (50) = 150 if created, or update (50) if updated.
     try {
       await db.activityLog.create({
         data: {
@@ -269,6 +270,7 @@ export async function POST(
           category: "stream",
           message: `Stream started: ${stream.name}`,
           details: `PID: ${pid}`,
+          quotaCost: stream.channelId && stream.channel?.status === "active" ? 150 : 0,
         },
       });
     } catch (logErr) {

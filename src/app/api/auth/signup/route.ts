@@ -3,9 +3,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { hashPassword, createToken, setSessionCookie, isValidEmail, validatePassword } from "@/lib/auth";
+import { checkRateLimit, getClientIP } from "@/lib/rate-limiter";
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit: max 5 signup attempts per IP per minute
+    const ip = getClientIP(req);
+    const rateLimit = checkRateLimit(ip, 5, 60 * 1000);
+    if (!rateLimit.allowed) {
+      const retryAfterSec = Math.ceil((rateLimit.resetAt - Date.now()) / 1000);
+      return NextResponse.json(
+        { error: `Too many signup attempts. Try again in ${retryAfterSec} seconds.` },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": retryAfterSec.toString(),
+          },
+        }
+      );
+    }
+
     const body = await req.json();
     const { email, password, name } = body;
 

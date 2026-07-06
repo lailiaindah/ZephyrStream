@@ -2,9 +2,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { verifyPassword, createToken, setSessionCookie } from "@/lib/auth";
+import { checkRateLimit, getClientIP } from "@/lib/rate-limiter";
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit: max 10 signin attempts per IP per minute
+    const ip = getClientIP(req);
+    const rateLimit = checkRateLimit(ip, 10, 60 * 1000);
+    if (!rateLimit.allowed) {
+      const retryAfterSec = Math.ceil((rateLimit.resetAt - Date.now()) / 1000);
+      return NextResponse.json(
+        { error: `Too many login attempts. Try again in ${retryAfterSec} seconds.` },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": retryAfterSec.toString(),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": rateLimit.resetAt.toString(),
+          },
+        }
+      );
+    }
+
     const body = await req.json();
     const { email, password } = body;
 
@@ -15,9 +34,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Trim+lowercase email — mobile keyboards and browser autofill
-    // sometimes add trailing whitespace, which would cause a silent
-    // mismatch against the stored (already-trimmed) email.
     const normalizedEmail = String(email).trim().toLowerCase();
 
     const user = await db.user.findUnique({
@@ -39,7 +55,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Create session
     const token = createToken({
       userId: user.id,
       email: user.email,
@@ -48,14 +63,16 @@ export async function POST(req: NextRequest) {
     });
     await setSessionCookie(token);
 
-    await db.activityLog.create({
-      data: {
-        userId: user.id,
-        level: "info",
-        category: "auth",
-        message: `User signed in: ${user.email}`,
-      },
-    });
+    try {
+      await db.activityLog.create({
+        data: {
+          userId: user.id,
+          level: "info",
+          category: "auth",
+          message: `User signed in: ${user.email}`,
+        },
+      });
+    } catch {}
 
     return NextResponse.json({
       success: true,
@@ -70,7 +87,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("Signin error:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to sign in" },
+      { error: "Failed to sign in" },
       { status: 500 }
     );
   }

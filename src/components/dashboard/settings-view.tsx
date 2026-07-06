@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { User, Shield, Server, Cpu, Loader2, CheckCircle2, Download, RefreshCw, GitBranch, AlertCircle, Database, Plus, Trash2, Terminal, Save } from "lucide-react";
+import { User, Shield, Server, Cpu, Loader2, CheckCircle2, Download, RefreshCw, GitBranch, AlertCircle, Database, Plus, Trash2, Terminal, Save, RotateCcw } from "lucide-react";
 import { APP_VERSION } from "@/lib/constants";
 
 export function SettingsView({ user }: { user: any }) {
@@ -115,6 +115,21 @@ export function SettingsView({ user }: { user: any }) {
       refetchBackups();
     },
     onError: (err: Error) => toast.error(err.message),
+  });
+
+  const restoreBackupMutation = useMutation({
+    mutationFn: async (filename: string) => {
+      const res = await fetch(`/api/system/backup/restore/${filename}`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data) => {
+      toast.success(data.message, { duration: 8000 });
+      refetchBackups();
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (err: Error) => toast.error(err.message, { duration: 8000 }),
   });
 
   return (
@@ -380,6 +395,22 @@ sudo systemctl restart zephystream-realtime`}
                     >
                       <Download className="h-3.5 w-3.5" />
                     </a>
+                    <button
+                      onClick={() => {
+                        if (confirm(`Restore database from "${backup.filename}"?\n\nThis will OVERWRITE the current database. A pre-restore backup will be created automatically. The server should be restarted after restore.`)) {
+                          restoreBackupMutation.mutate(backup.filename);
+                        }
+                      }}
+                      disabled={restoreBackupMutation.isPending}
+                      className="text-slate-400 hover:text-amber-300 p-1"
+                      title="Restore (overwrite current DB)"
+                    >
+                      {restoreBackupMutation.isPending && restoreBackupMutation.variables === backup.filename ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-3.5 w-3.5" />
+                      )}
+                    </button>
                     <button
                       onClick={() => {
                         if (confirm(`Delete backup ${backup.filename}?`)) {

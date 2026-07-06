@@ -12,6 +12,7 @@ import { createOrUpdateBroadcast, uploadThumbnail, pickTitleAndThumbnail, refres
 import { runCleanupIfNeeded } from "@/lib/cleanup";
 import { runBackupIfNeeded } from "@/lib/backup";
 import { resolveVideoFiles, shouldShuffleQueue, shuffleArray } from "@/lib/video-source";
+import { checkSystemThresholds } from "@/lib/threshold-alerts";
 
 const CHECK_INTERVAL_MS = 30 * 1000; // 30 seconds
 let schedulerInterval: NodeJS.Timeout | null = null;
@@ -33,6 +34,8 @@ async function schedulerTick() {
     await runCleanupIfNeeded();
     // Backup runs at most once per day (throttled internally)
     await runBackupIfNeeded();
+    // Check system thresholds (disk/RAM/log/upload) every tick
+    await checkSystemThresholds().catch(() => {});
   } catch (err) {
     console.error("[Scheduler] Tick error:", err);
   } finally {

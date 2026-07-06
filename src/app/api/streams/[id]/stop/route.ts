@@ -107,6 +107,7 @@ export async function POST(
           level: "info",
           category: "stream",
           message: `Stream stopped: ${stream.name}`,
+          quotaCost: stream.channelId && stream.broadcastId ? 50 : 0, // transition to complete
         },
       });
     } catch (logErr) {

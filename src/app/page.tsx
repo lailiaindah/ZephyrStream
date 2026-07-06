@@ -11,6 +11,7 @@ import { DashboardStats } from "@/components/dashboard/stats-cards";
 import { MetricChart } from "@/components/dashboard/metric-chart";
 import { SpeedTestPanel } from "@/components/dashboard/speed-test-panel";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
+import { SystemAlerts } from "@/components/dashboard/system-alerts";
 import { QuotaDashboard } from "@/components/dashboard/quota-dashboard";
 import { ChannelList } from "@/components/channels/channel-list";
 import { StreamList } from "@/components/streams/stream-list";
@@ -210,6 +211,7 @@ export default function Home() {
 
                 <div className="space-y-5">
                   <QuotaDashboard />
+                  <SystemAlerts />
                   <SpeedTestPanel />
                   <ActivityFeed logs={dashboardData?.recentLogs || []} />
                 </div>

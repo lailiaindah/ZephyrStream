@@ -1,0 +1,98 @@
+# ZephyrStream Docker Compose
+# Usage: docker-compose up -d
+#
+# This file defines:
+#   1. zephystream   — the main app (port 3000) + realtime service (port 3003)
+#   2. uptime-kuma   — uptime monitoring dashboard (port 3001)
+#   3. prometheus    — metrics collection (port 9090)
+#   4. grafana       — metrics visualization dashboard (port 3002)
+#
+# All services use persistent volumes so data survives container restarts.
+
+version: "3.8"
+
+services:
+  # === ZephyrStream Main App ===
+  zephystream:
+    build: .
+    container_name: zephystream
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "3003:3003"
+    volumes:
+      - zephyr-db:/app/db
+      - zephyr-uploads:/app/public/uploads
+      - zephyr-logs:/app/logs
+      - zephyr-backups:/app/backups
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/db/custom.db
+      - JWT_SECRET=${JWT_SECRET:-please-change-this-secret-in-production}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      # FFmpeg/FFprobe paths (installed in Docker image)
+      - FFMPEG_PATH=ffmpeg
+      - FFPROBE_PATH=ffprobe
+      # Ookla Speedtest CLI path (installed in Docker image)
+      - SPEEDTEST_BIN=/usr/local/bin/speedtest
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/system/time"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # === Uptime Kuma — Uptime Monitoring ===
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - uptime-kuma-data:/app/data
+    depends_on:
+      - zephystream
+
+  # === Prometheus — Metrics Collection ===
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+
+  # === Grafana — Metrics Visualization ===
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+
+volumes:
+  zephyr-db:
+  zephyr-uploads:
+  zephyr-logs:
+  zephyr-backups:
+  uptime-kuma-data:
+  prometheus-data:
+  grafana-data:

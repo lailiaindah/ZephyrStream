@@ -311,13 +311,17 @@ model SystemMetric {
 }
 
 model ActivityLog {
-  id        String   @id @default(cuid())
-  userId    String?
-  level     String   @default("info") // info | warn | error | success
-  category  String   // auth | channel | stream | file | system
-  message   String
-  details   String?
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  userId     String?
+  level      String   @default("info") // info | warn | error | success
+  category   String   // auth | channel | stream | file | system
+  message    String
+  details    String?
+  // YouTube API quota cost in units (0 = no API call made).
+  // Set explicitly when a YouTube API call is made, so quota tracking
+  // is accurate instead of estimated from log message text.
+  quotaCost  Int      @default(0)
+  createdAt  DateTime @default(now())
 
   @@index([userId])
   @@index([category])
