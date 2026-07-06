@@ -188,8 +188,8 @@ export async function recordSystemStats() {
         netUpload: stats.network.uploadSpeed,
         uptime: stats.uptime,
         loadAvg1: stats.load.average1,
-        loadAvg5: 0,
-        loadAvg15: 0,
+        loadAvg5: stats.load.average5,
+        loadAvg15: stats.load.average15,
       },
     });
 

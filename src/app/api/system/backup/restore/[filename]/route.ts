@@ -1,5 +1,6 @@
 // POST /api/system/backup/restore/[filename] — Restore database from a backup file
 import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { getBackupPath } from "@/lib/backup";
 import { canAccessSystemEndpoints } from "@/lib/access-control";
@@ -36,7 +37,6 @@ export async function POST(
       return NextResponse.json({ error: "Backup file not found" }, { status: 404 });
     }
 
-    // Determine the current DB path
     const DB_PATH = process.env.DATABASE_URL?.replace("file:", "") || "db/custom.db";
 
     // Create a pre-restore backup (safety net)
@@ -45,13 +45,16 @@ export async function POST(
       await fs.copyFile(DB_PATH, preRestoreBackup);
     } catch {}
 
-    // Restore: copy the backup file over the current DB
+    // Restore using sqlite3 .restore (safe for online DB).
+    // Do NOT fall back to fs.copyFile — overwriting a live SQLite DB
+    // file can cause corruption (WAL/journal conflicts).
     try {
-      // Try sqlite3 .restore first (safe for online DB)
       await execFileAsync("sqlite3", [DB_PATH, `.restore '${backupPath}'`], { timeout: 30000 });
     } catch {
-      // Fallback: direct file copy (may miss in-flight writes)
-      await fs.copyFile(backupPath, DB_PATH);
+      return NextResponse.json(
+        { error: "sqlite3 CLI is required for restore but was not found. Install with: sudo apt-get install sqlite3" },
+        { status: 500 }
+      );
     }
 
     await db.activityLog.create({
@@ -73,6 +76,3 @@ export async function POST(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
-
-// Need db import for activity log
-import { db } from "@/lib/db";

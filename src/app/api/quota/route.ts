@@ -19,15 +19,30 @@ export async function GET() {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     // Get today's start time in Pacific Time (YouTube quota resets at
-    // midnight PT).
+    // midnight PT). Use Intl to get the correct offset (PST -08:00 or
+    // PDT -07:00 depending on DST).
     const now = new Date();
-    const ptFormatter = new Intl.DateTimeFormat("en-US", {
+    const ptDateParts = new Intl.DateTimeFormat("en-US", {
       timeZone: "America/Los_Angeles",
       year: "numeric", month: "2-digit", day: "2-digit",
-    });
-    const ptDateStr = ptFormatter.format(now);
-    const [month, day, year] = ptDateStr.split("/");
-    const todayStart = new Date(`${year}-${month}-${day}T00:00:00-08:00`);
+    }).formatToParts(now);
+    const year = ptDateParts.find(p => p.type === "year")?.value || "2024";
+    const month = ptDateParts.find(p => p.type === "month")?.value || "01";
+    const day = ptDateParts.find(p => p.type === "day")?.value || "01";
+
+    // Get the actual UTC offset for PT (handles DST automatically)
+    const offsetParts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      timeZoneName: "shortOffset",
+    }).formatToParts(now);
+    const offsetStr = offsetParts.find(p => p.type === "timeZoneName")?.value || "GMT-8";
+    // offsetStr is like "GMT-8" or "GMT-7" — convert to "-08:00" / "-07:00"
+    const offsetMatch = offsetStr.match(/GMT([+-])(\d+)/);
+    const offsetSign = offsetMatch ? offsetMatch[1] : "-";
+    const offsetHours = offsetMatch ? parseInt(offsetMatch[2]) : 8;
+    const offsetFormatted = `${offsetSign}${String(offsetHours).padStart(2, "0")}:00`;
+
+    const todayStart = new Date(`${year}-${month}-${day}T00:00:00${offsetFormatted}`);
 
     // === EXPLICIT QUOTA TRACKING ===
     // Sum the quotaCost column directly from activity logs.

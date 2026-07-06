@@ -97,7 +97,10 @@ export async function checkSystemThresholds(): Promise<SystemAlert[]> {
 
     // === RAM USAGE ===
     const mem = await si.mem();
-    const ramPct = (mem.used / mem.total) * 100;
+    // Use 'active' memory (actual used by apps) instead of 'used' (which
+    // includes buff/cache). Same fix as system-stats.ts.
+    const activeMem = (mem as any).active || mem.used;
+    const ramPct = (activeMem / mem.total) * 100;
     if (ramPct >= RAM_CRITICAL_PCT) {
       const key = "ram-critical";
       if (!firedAlerts.has(key)) {
@@ -106,7 +109,7 @@ export async function checkSystemThresholds(): Promise<SystemAlert[]> {
           level: "error",
           category: "system",
           message: `RAM usage is ${ramPct.toFixed(1)}% (critical)`,
-          details: `Total: ${(mem.total / 1e9).toFixed(1)}GB, Used: ${(mem.used / 1e9).toFixed(1)}GB`,
+          details: `Total: ${(mem.total / 1e9).toFixed(1)}GB, Used: ${(activeMem / 1e9).toFixed(1)}GB`,
           value: ramPct,
           threshold: RAM_CRITICAL_PCT,
           unit: "%",
@@ -120,7 +123,7 @@ export async function checkSystemThresholds(): Promise<SystemAlert[]> {
           level: "warn",
           category: "system",
           message: `RAM usage is ${ramPct.toFixed(1)}% (warning)`,
-          details: `Total: ${(mem.total / 1e9).toFixed(1)}GB, Used: ${(mem.used / 1e9).toFixed(1)}GB`,
+          details: `Total: ${(mem.total / 1e9).toFixed(1)}GB, Used: ${(activeMem / 1e9).toFixed(1)}GB`,
           value: ramPct,
           threshold: RAM_WARNING_PCT,
           unit: "%",
