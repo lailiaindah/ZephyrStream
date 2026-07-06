@@ -110,7 +110,12 @@ export async function getSystemStats(): Promise<SystemStats> {
   }
 
   const totalMemGB = mem.total / 1_073_741_824;
-  const usedMemGB = mem.used / 1_073_741_824;
+  // Use 'active' memory (actual used by applications) instead of 'used'
+  // (which includes buff/cache). This gives a more accurate picture of
+  // how much RAM the apps are really consuming.
+  // Fall back to 'used' if 'active' is not available (older systeminformation versions).
+  const activeMemBytes = (mem as any).active || mem.used;
+  const usedMemGB = activeMemBytes / 1_073_741_824;
   const freeMemGB = mem.free / 1_073_741_824;
 
   const disks = disk.slice(0, 5).map((d) => ({
@@ -136,7 +141,7 @@ export async function getSystemStats(): Promise<SystemStats> {
       total: totalMemGB,
       used: usedMemGB,
       free: freeMemGB,
-      usage: (mem.used / mem.total) * 100,
+      usage: (activeMemBytes / mem.total) * 100,
     },
     disk: disks,
     network: {
