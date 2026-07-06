@@ -49,8 +49,6 @@ RUN curl -fsSL https://install.speedtest.net/app/cli/ookla-speedtest-1.2.0-linux
     echo "WARNING: Ookla Speedtest CLI download failed — speed test will use Cloudflare fallback"
 
 # Copy built standalone app.
-# Next.js standalone output puts server.js at the ROOT of the standalone
-# folder, so COPY to /app/ makes it /app/server.js (NOT /app/.next/standalone/server.js)
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
@@ -59,13 +57,18 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+# Copy prisma client + engine from builder
+COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 
 # Copy mini-services (realtime service)
 COPY --from=builder /app/mini-services ./mini-services
 
 # Install realtime service dependencies in the runner stage too
-# (socket.io, jsonwebtoken are NOT included in Next.js standalone output)
 RUN cd /app/mini-services/realtime && bun install
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Create directories for data
 RUN mkdir -p /app/db /app/public/uploads /app/logs/streams /app/backups
@@ -81,11 +84,8 @@ ENV PORT=3000
 EXPOSE 3000 3003
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD curl -f http://localhost:3000/api/system/time || exit 1
 
-# Start both the main app and the realtime service.
-# server.js is at /app/server.js (copied from standalone output root).
-# Realtime service runs as a background process.
-CMD bash -c "cd /app/mini-services/realtime && bun index.ts & \
-  cd /app && bun server.js"
+# Use entrypoint script (runs DB migration + starts both services)
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
