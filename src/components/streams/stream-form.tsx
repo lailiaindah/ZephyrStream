@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,6 +67,16 @@ function StreamFormInner({
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<string[]>(
     editingStream?.playlistSourceIds ? JSON.parse(editingStream.playlistSourceIds) : []
   );
+
+  // Clear playlist selections when the channel changes — playlists are
+  // channel-scoped, so a playlist selected for Channel A is not valid when
+  // the user switches to Channel B. Without this, stale playlist IDs from
+  // the old channel remain invisibly in the selection and get sent to the
+  // server on save (the playlist picker only shows the current channel's
+  // playlists, so the user can't see or uncheck the stale ones).
+  useEffect(() => {
+    setSelectedPlaylistIds([]);
+  }, [channelId]);
   const [shuffle, setShuffle] = useState(editingStream?.shuffle ?? true);
   const [minHours, setMinHours] = useState(editingStream?.minHours ?? 2);
   const [maxHours, setMaxHours] = useState(editingStream?.maxHours ?? 4);
