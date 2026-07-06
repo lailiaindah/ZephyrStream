@@ -1,5 +1,5 @@
 # ZephyrStream Docker Compose
-# Usage: docker-compose up -d
+# Usage: docker compose up -d
 #
 # This file defines:
 #   1. zephystream   — the main app (port 3000) + realtime service (port 3003)
@@ -8,8 +8,6 @@
 #   4. grafana       — metrics visualization dashboard (port 3002)
 #
 # All services use persistent volumes so data survives container restarts.
-
-version: "3.8"
 
 services:
   # === ZephyrStream Main App ===

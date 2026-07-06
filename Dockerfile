@@ -2,7 +2,7 @@
 # Multi-stage build: build the Next.js app, then create a lean production image
 
 # === Stage 1: Build ===
-FROM oven/bun:1.1 AS builder
+FROM oven/bun:latest AS builder
 
 WORKDIR /app
 
@@ -13,8 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package files and install dependencies
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+# Don't use --frozen-lockfile because the bun.lock in the repo may use
+# a different lockfile version than the bun version in this image.
+# bun install without --frozen-lockfile will resolve and install correctly.
+COPY package.json ./
+COPY bun.lock* ./
+RUN bun install
 
 # Copy source code
 COPY . .
@@ -26,7 +30,7 @@ RUN bun run db:generate
 RUN bun run build
 
 # === Stage 2: Production ===
-FROM oven/bun:1.1 AS runner
+FROM oven/bun:latest AS runner
 
 WORKDIR /app
 
