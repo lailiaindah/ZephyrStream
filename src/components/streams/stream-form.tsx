@@ -180,20 +180,25 @@ function StreamFormInner({
     );
   };
 
-  // Fetch ALL the user's playlists (not filtered by channel) so the user
-  // can pick any playlist as the stream's source, regardless of which
-  // channel the playlist is assigned to. A playlist is just a collection
-  // of videos — the channel determines where the stream goes, not which
-  // videos can be used. Previously this filtered by channelId, which
-  // meant playlists created without a channel assignment (channelId=null)
-  // were invisible when a specific channel was selected.
+  // Fetch playlists for the SELECTED channel only. When a specific
+  // channel is selected (either locked via the Streams page filter, or
+  // picked from the channel dropdown in the form), only that channel's
+  // playlists are shown. When no channel is selected, the playlist
+  // picker shows "Select a channel to see its playlists".
+  //
+  // This is the correct behavior: playlists are channel-scoped
+  // collections of videos. If you're creating a stream for Channel A,
+  // you should only see Channel A's playlists — not playlists from
+  // other channels.
   const { data: playlistsData } = useQuery({
-    queryKey: ["playlists", "all-for-stream-form"],
+    queryKey: ["playlists", channelId],
     queryFn: async () => {
-      const res = await fetch("/api/playlists");
+      if (!channelId) return [];
+      const res = await fetch(`/api/playlists?channelId=${channelId}`);
       const data = await res.json();
       return (data.playlists as any[]) || [];
     },
+    enabled: !!channelId,
   });
 
   const insertVariable = (token: string) => {
@@ -734,9 +739,13 @@ function StreamFormInner({
                       ON, the combined queue is randomized.
                     </p>
                     <div className="max-h-48 overflow-y-auto rounded-md border border-slate-800 bg-slate-900/50">
-                      {!playlistsData || playlistsData.length === 0 ? (
+                      {!channelId ? (
                         <div className="p-4 text-center text-[11px] text-slate-500">
-                          No playlists yet — go to Files → Playlists tab to create one
+                          Select a channel to see its playlists
+                        </div>
+                      ) : !playlistsData || playlistsData.length === 0 ? (
+                        <div className="p-4 text-center text-[11px] text-slate-500">
+                          No playlists for this channel yet — go to Files → Playlists tab to create one
                         </div>
                       ) : (
                         playlistsData.map((p) => {
