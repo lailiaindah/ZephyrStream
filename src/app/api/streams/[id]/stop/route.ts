@@ -97,14 +97,21 @@ export async function POST(
       },
     });
 
-    await db.activityLog.create({
-      data: {
-        userId: user.id,
-        level: "info",
-        category: "stream",
-        message: `Stream stopped: ${stream.name}`,
-      },
-    });
+    // Activity log is non-critical — wrap in its own try/catch so a DB
+    // error doesn't skip the reschedule block below or return a false
+    // 500 to the client. The stream is already stopped successfully.
+    try {
+      await db.activityLog.create({
+        data: {
+          userId: user.id,
+          level: "info",
+          category: "stream",
+          message: `Stream stopped: ${stream.name}`,
+        },
+      });
+    } catch (logErr) {
+      console.warn("[Stop] Failed to create activity log (non-fatal):", logErr);
+    }
 
     // If autoCreateSchedule is on AND user didn't choose "Stop Only",
     // create the next-day schedule (startAt + 24h, NOT endedAt + 24h).
@@ -116,15 +123,19 @@ export async function POST(
       try {
         nextSchedule = await createNextDaySchedule(stream);
         if (nextSchedule) {
-          await db.activityLog.create({
-            data: {
-              userId: user.id,
-              level: "success",
-              category: "stream",
-              message: `Auto-created next-day schedule: ${stream.name}`,
-              details: `Start at ${nextSchedule.startAt?.toISOString()}`,
-            },
-          });
+          try {
+            await db.activityLog.create({
+              data: {
+                userId: user.id,
+                level: "success",
+                category: "stream",
+                message: `Auto-created next-day schedule: ${stream.name}`,
+                details: `Start at ${nextSchedule.startAt?.toISOString()}`,
+              },
+            });
+          } catch (logErr) {
+            console.warn("[Stop] Failed to log next-day schedule (non-fatal):", logErr);
+          }
         }
       } catch (schedErr: any) {
         console.warn(`[Stop] createNextDaySchedule failed: ${schedErr.message}`);
@@ -140,15 +151,19 @@ export async function POST(
         }).catch(() => {});
       }
     } else if (stream.autoCreateSchedule && skipReschedule) {
-      await db.activityLog.create({
-        data: {
-          userId: user.id,
-          level: "info",
-          category: "stream",
-          message: `Stream stopped without reschedule: ${stream.name}`,
-          details: "User chose 'Stop Only' — no next-day schedule created.",
-        },
-      });
+      try {
+        await db.activityLog.create({
+          data: {
+            userId: user.id,
+            level: "info",
+            category: "stream",
+            message: `Stream stopped without reschedule: ${stream.name}`,
+            details: "User chose 'Stop Only' — no next-day schedule created.",
+          },
+        });
+      } catch (logErr) {
+        console.warn("[Stop] Failed to log stop-only (non-fatal):", logErr);
+      }
     }
 
     return NextResponse.json({
@@ -163,6 +178,18 @@ export async function POST(
         : null,
     });
   } catch (error: any) {
+    // Reset the stream status from "stopping" to "error" so the user
+    // can recover via the UI. Without this, a DB error during stop
+    // leaves the stream permanently stuck in "stopping" — the start
+    // route rejects it, the stop route rejects it, and ghost cleanup
+    // only looks for status="live".
+    try {
+      const { id } = await params;
+      await db.stream.update({
+        where: { id },
+        data: { status: "error", lastError: error.message },
+      });
+    } catch {}
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

@@ -15,16 +15,41 @@ export async function GET(
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { id } = await params;
+    // SECURITY: use explicit `select` to exclude sensitive OAuth fields
+    // (accessToken, refreshToken) from the response — same fix applied
+    // to the list endpoint. Previously this used `include` which returns
+    // ALL scalar fields including tokens. Google refresh tokens don't
+    // expire, so leaking them allows indefinite YouTube impersonation.
     const channel = await db.channel.findFirst({
       where: { id, userId: user.id },
-      include: {
+      select: {
+        id: true,
+        userId: true,
+        name: true,
+        description: true,
+        youtubeChannelId: true,
+        youtubeChannelName: true,
+        clientId: true,
+        clientSecret: true,
+        // accessToken and refreshToken are EXCLUDED
+        tokenExpiresAt: true,
+        status: true,
+        lastSyncAt: true,
+        titleRotatorIndex: true,
+        thumbnailRotatorIndex: true,
+        createdAt: true,
+        updatedAt: true,
         streams: {
           orderBy: { createdAt: "desc" },
           take: 10,
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            startAt: true,
+            createdAt: true,
+          },
         },
-        // Include counts for all related entities so this endpoint can be
-        // used as a "channel status" check (e.g. visiting /api/channels/[id]
-        // in a browser shows stream/file/title/thumbnail/playlist counts).
         _count: {
           select: {
             streams: true,

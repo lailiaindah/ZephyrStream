@@ -122,6 +122,13 @@ let lastStreamCheck = new Date();
 
 async function checkStreamChanges() {
   try {
+    // Capture the query start time BEFORE the query. We update
+    // lastStreamCheck to this value after processing — so any DB write
+    // that lands during processing has updatedAt > queryStart and is
+    // caught on the next poll. Previously lastStreamCheck was set to
+    // new Date() AFTER processing, which could miss writes in the
+    // processing window.
+    const queryStart = new Date();
     const changed = await db.stream.findMany({
       where: { updatedAt: { gt: lastStreamCheck } },
       select: { id: true, name: true, status: true, lastError: true, startedAt: true, endedAt: true, pid: true, userId: true },
@@ -138,7 +145,6 @@ async function checkStreamChanges() {
       };
 
       // Emit only to sockets belonging to this stream's owner.
-      // We do this by iterating connected sockets and checking userId.
       for (const [socketId, socket] of io.sockets.sockets) {
         if ((socket as any).userId === stream.userId) {
           socket.emit("stream:status", payload);
@@ -153,7 +159,7 @@ async function checkStreamChanges() {
         }
       }
     }
-    lastStreamCheck = new Date();
+    lastStreamCheck = queryStart;
   } catch (err: any) { console.error("[Realtime] Stream check error:", err.message); }
 }
 
@@ -161,6 +167,9 @@ let lastActivityCheck = new Date();
 
 async function checkNewActivity() {
   try {
+    // Same queryStart pattern as checkStreamChanges — capture time
+    // before the query so writes during processing aren't missed.
+    const queryStart = new Date();
     const newLogs = await db.activityLog.findMany({
       where: { createdAt: { gt: lastActivityCheck } },
       select: { id: true, level: true, category: true, message: true, details: true, userId: true, createdAt: true },
@@ -180,7 +189,7 @@ async function checkNewActivity() {
         }
       }
     }
-    lastActivityCheck = new Date();
+    lastActivityCheck = queryStart;
   } catch (err: any) { console.error("[Realtime] Activity check error:", err.message); }
 }
 
