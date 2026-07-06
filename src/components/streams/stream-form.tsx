@@ -180,18 +180,20 @@ function StreamFormInner({
     );
   };
 
-  // Fetch playlists for the selected channel so the user can pick one or more
-  // as the stream's source. When channelId is empty, we don't fetch — there
-  // are no playlists to pick from.
+  // Fetch ALL the user's playlists (not filtered by channel) so the user
+  // can pick any playlist as the stream's source, regardless of which
+  // channel the playlist is assigned to. A playlist is just a collection
+  // of videos — the channel determines where the stream goes, not which
+  // videos can be used. Previously this filtered by channelId, which
+  // meant playlists created without a channel assignment (channelId=null)
+  // were invisible when a specific channel was selected.
   const { data: playlistsData } = useQuery({
-    queryKey: ["playlists", channelId],
+    queryKey: ["playlists", "all-for-stream-form"],
     queryFn: async () => {
-      if (!channelId) return [];
-      const res = await fetch(`/api/playlists?channelId=${channelId}`);
+      const res = await fetch("/api/playlists");
       const data = await res.json();
       return (data.playlists as any[]) || [];
     },
-    enabled: !!channelId,
   });
 
   const insertVariable = (token: string) => {
@@ -732,13 +734,9 @@ function StreamFormInner({
                       ON, the combined queue is randomized.
                     </p>
                     <div className="max-h-48 overflow-y-auto rounded-md border border-slate-800 bg-slate-900/50">
-                      {!channelId ? (
+                      {!playlistsData || playlistsData.length === 0 ? (
                         <div className="p-4 text-center text-[11px] text-slate-500">
-                          Select a channel to see its playlists
-                        </div>
-                      ) : !playlistsData || playlistsData.length === 0 ? (
-                        <div className="p-4 text-center text-[11px] text-slate-500">
-                          No playlists for this channel yet — go to Files → Playlists tab to create one
+                          No playlists yet — go to Files → Playlists tab to create one
                         </div>
                       ) : (
                         playlistsData.map((p) => {

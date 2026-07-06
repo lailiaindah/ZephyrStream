@@ -609,7 +609,7 @@ export function StreamList() {
         editingStream={editing}
         onSubmit={handleSubmit}
         isLoading={createMutation.isPending || updateMutation.isPending}
-        lockedChannelId={selectedChannelId && selectedChannelId !== "unassigned" ? selectedChannelId : undefined}
+        lockedChannelId={selectedChannelId && selectedChannelId !== "unassigned" && selectedChannelId !== "all" ? selectedChannelId : undefined}
       />
 
       {/* Stop dialog with reschedule options */}
