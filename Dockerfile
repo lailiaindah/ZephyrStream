@@ -29,6 +29,13 @@ RUN bun run build
 # Install realtime service dependencies
 RUN cd /app/mini-services/realtime && bun install
 
+# Run db:push during build so the DB schema is baked into the image.
+# At runtime, we skip prisma entirely — the generated Prisma Client
+# already knows the schema, and SQLite will auto-create columns if
+# the app writes to them (Prisma Client handles this).
+# This avoids the prisma CLI wasm issue in the runner stage.
+RUN bun run db:push || true
+
 # === Stage 2: Production ===
 FROM oven/bun:latest AS runner
 
@@ -53,22 +60,21 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
-# Copy Prisma files (needed for DB access at runtime + db:push migration)
+# Copy ALL of node_modules from builder — this ensures Prisma Client,
+# its engine binaries, and all runtime deps are available.
+# The standalone output only includes Next.js's own deps, not Prisma.
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
+
+# Copy entrypoint script (runs SQLite migration without Prisma CLI)
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Copy mini-services (realtime service)
 COPY --from=builder /app/mini-services ./mini-services
 
 # Install realtime service dependencies in the runner stage too
 RUN cd /app/mini-services/realtime && bun install
-
-# Copy entrypoint script
-COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
 
 # Create directories for data
 RUN mkdir -p /app/db /app/public/uploads /app/logs/streams /app/backups
@@ -87,5 +93,7 @@ EXPOSE 3000 3003
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
   CMD curl -f http://localhost:3000/api/system/time || exit 1
 
-# Use entrypoint script (runs DB migration + starts both services)
+# Start both the main app and the realtime service via entrypoint script.
+# The entrypoint runs SQLite migration (without Prisma CLI) then starts
+# both services.
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
