@@ -1,9 +1,15 @@
 // YouTube Data API v3 wrapper — used ONLY for broadcast/stream management
 // Each channel uses its own OAuth credentials (clientId + clientSecret + refreshToken)
 // Live streaming itself uses the YouTube stream key + FFmpeg (saves API quota)
+//
+// SECURITY: OAuth tokens (accessToken, refreshToken) and clientSecret are
+// encrypted at rest using AES-256-GCM. See src/lib/crypto.ts.
+// When reading from DB, decrypt() is called. When writing to DB, encrypt()
+// is called. The encryption is transparent to the rest of the app.
 
 import { google } from "googleapis";
 import { db } from "@/lib/db";
+import { encrypt, decrypt } from "@/lib/crypto";
 
 export interface YouTubeChannelInfo {
   id: string;
@@ -15,7 +21,8 @@ export interface YouTubeChannelInfo {
   videoCount: number;
 }
 
-// Build an OAuth2 client using a channel's stored credentials
+// Build an OAuth2 client using a channel's stored credentials.
+// Decrypts the tokens before passing them to the OAuth2 client.
 export function buildOAuthClient(channel: {
   clientId: string;
   clientSecret: string;
@@ -23,18 +30,21 @@ export function buildOAuthClient(channel: {
   accessToken: string | null;
   tokenExpiresAt: Date | null;
 }) {
+  // Decrypt tokens before use
+  const decryptedClientSecret = decrypt(channel.clientSecret);
+  const decryptedRefreshToken = channel.refreshToken ? decrypt(channel.refreshToken) : null;
+  const decryptedAccessToken = channel.accessToken ? decrypt(channel.accessToken) : null;
+
   const oauth2Client = new google.auth.OAuth2(
-    channel.clientId,
-    channel.clientSecret,
-    // Redirect URI configured in Google Cloud Console — for desktop/web apps
-    // We use postmessage for token exchange flexibility
+    channel.clientId, // clientId is not encrypted (it's public)
+    decryptedClientSecret,
     "http://localhost:3000/api/channels/oauth-callback"
   );
 
-  if (channel.refreshToken || channel.accessToken) {
+  if (decryptedRefreshToken || decryptedAccessToken) {
     oauth2Client.setCredentials({
-      access_token: channel.accessToken || undefined,
-      refresh_token: channel.refreshToken || undefined,
+      access_token: decryptedAccessToken || undefined,
+      refresh_token: decryptedRefreshToken || undefined,
       expiry_date: channel.tokenExpiresAt?.getTime() || undefined,
     });
   }
@@ -111,19 +121,27 @@ export async function refreshAccessToken(channelId: string): Promise<string> {
   if (!channel) throw new Error("Channel not found");
   if (!channel.refreshToken) throw new Error("No refresh token — re-authorize the channel");
 
+  // Decrypt stored credentials before use
+  const decryptedClientSecret = decrypt(channel.clientSecret);
+  const decryptedRefreshToken = decrypt(channel.refreshToken);
+
+  if (!decryptedRefreshToken) {
+    throw new Error("Failed to decrypt refresh token — re-authorize the channel");
+  }
+
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
-    channel.clientSecret,
+    decryptedClientSecret,
     "http://localhost:3000/api/channels/oauth-callback"
   );
-  oauth2Client.setCredentials({ refresh_token: channel.refreshToken });
+  oauth2Client.setCredentials({ refresh_token: decryptedRefreshToken });
 
   const { credentials } = await oauth2Client.refreshAccessToken();
   if (!credentials.access_token) throw new Error("Failed to refresh access token");
 
-  // Build update data — always update access token + expiry
+  // Build update data — encrypt tokens before storing
   const updateData: any = {
-    accessToken: credentials.access_token,
+    accessToken: encrypt(credentials.access_token),
     tokenExpiresAt: credentials.expiry_date
       ? new Date(credentials.expiry_date)
       : new Date(Date.now() + 3600 * 1000),
@@ -131,10 +149,10 @@ export async function refreshAccessToken(channelId: string): Promise<string> {
     status: "active",
   };
 
-  // If Google returned a NEW refresh token (rotation), persist it.
+  // If Google returned a NEW refresh token (rotation), persist it (encrypted).
   // Otherwise keep the existing one (refresh tokens are long-lived).
-  if (credentials.refresh_token && credentials.refresh_token !== channel.refreshToken) {
-    updateData.refreshToken = credentials.refresh_token;
+  if (credentials.refresh_token && credentials.refresh_token !== decryptedRefreshToken) {
+    updateData.refreshToken = encrypt(credentials.refresh_token);
     console.log(`[Auth] Refresh token rotated for channel ${channelId}`);
   }
 
@@ -157,7 +175,8 @@ export async function getValidAccessToken(channelId: string): Promise<string> {
   if (channel.tokenExpiresAt.getTime() < Date.now() + 5 * 60 * 1000) {
     return refreshAccessToken(channelId);
   }
-  return channel.accessToken;
+  // Decrypt access token before returning
+  return decrypt(channel.accessToken);
 }
 
 // Fetch the YouTube channel info for the authenticated user

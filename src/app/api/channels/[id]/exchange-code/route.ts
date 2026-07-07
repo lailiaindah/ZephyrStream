@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { exchangeCodeForTokens, getChannelInfo } from "@/lib/youtube";
+import { encrypt, decrypt } from "@/lib/crypto";
 
 export async function POST(
   req: NextRequest,
@@ -71,8 +72,8 @@ export async function POST(
     await db.channel.update({
       where: { id: channel.id },
       data: {
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token || channel.refreshToken,
+        accessToken: encrypt(tokens.access_token),
+        refreshToken: encrypt(tokens.refresh_token || decrypt(channel.refreshToken || "")),
         tokenExpiresAt: expiresAt,
         status: "active",
         lastSyncAt: new Date(),

@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { encrypt } from "@/lib/crypto";
 
 export async function GET() {
   try {
@@ -75,7 +76,7 @@ export async function POST(req: NextRequest) {
         name,
         description: description || null,
         clientId,
-        clientSecret,
+        clientSecret: encrypt(clientSecret),
         status: "inactive",
       },
     });

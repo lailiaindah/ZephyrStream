@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { exchangeCodeForTokens, getChannelInfo } from "@/lib/youtube";
+import { encrypt, decrypt } from "@/lib/crypto";
 
 // Build the response HTML that posts a message to the opener window.
 // All interpolated values are JSON-stringified so they cannot break out
@@ -117,8 +118,8 @@ export async function GET(req: NextRequest) {
     await db.channel.update({
       where: { id: channel.id },
       data: {
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token || channel.refreshToken,
+        accessToken: encrypt(tokens.access_token),
+        refreshToken: encrypt(tokens.refresh_token || decrypt(channel.refreshToken || "")),
         tokenExpiresAt: expiresAt,
         status: "active",
         lastSyncAt: new Date(),

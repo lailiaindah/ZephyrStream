@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
+import { encrypt } from "@/lib/crypto";
 import fs from "fs/promises";
 import path from "path";
 import { UPLOAD_DIR } from "@/lib/constants";
@@ -111,7 +112,7 @@ export async function PATCH(
         ...(name !== undefined && { name }),
         ...(description !== undefined && { description }),
         ...(clientId !== undefined && { clientId }),
-        ...(clientSecret !== undefined && { clientSecret }),
+        ...(clientSecret !== undefined && { clientSecret: encrypt(clientSecret) }),
         ...(status !== undefined && { status }),
       },
       select: {
