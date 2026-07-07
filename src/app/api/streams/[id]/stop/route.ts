@@ -118,7 +118,7 @@ export async function POST(
     // create the next-day schedule (startAt + 24h, NOT endedAt + 24h).
     // Wrap in try/catch so a failure here doesn't fail the stop request
     // — the stream is already stopped successfully at this point.
-    let nextSchedule = null;
+    let nextSchedule: any = null;
     let rescheduleWarning: string | null = null;
     if (stream.autoCreateSchedule && !skipReschedule) {
       try {

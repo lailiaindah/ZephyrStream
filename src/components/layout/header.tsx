@@ -91,13 +91,13 @@ export function Header({ user, title, subtitle, actions, onNavigate, onLogout }:
       ]);
 
       return {
-        channels: (channelsRes.channels || []).filter((c: any) =>
+        channels: (channelsRes?.channels || []).filter((c: any) =>
           c.name.toLowerCase().includes(q) || (c.youtubeChannelName || "").toLowerCase().includes(q)
         ),
-        streams: (streamsRes.streams || []).filter((s: any) =>
+        streams: (streamsRes?.streams || []).filter((s: any) =>
           s.name.toLowerCase().includes(q)
         ),
-        files: (filesRes.files || []).filter((f: any) =>
+        files: (filesRes?.files || []).filter((f: any) =>
           f.originalName.toLowerCase().includes(q)
         ),
       };
@@ -170,7 +170,7 @@ export function Header({ user, title, subtitle, actions, onNavigate, onLogout }:
                       {searchData?.channels?.length > 0 && (
                         <div className="p-2">
                           <p className="px-2 py-1 text-[10px] uppercase tracking-wider text-slate-500">Channels</p>
-                          {searchData.channels.map((c: any) => (
+                          {searchData?.channels?.map((c: any) => (
                             <button
                               key={c.id}
                               onClick={() => {
@@ -188,7 +188,7 @@ export function Header({ user, title, subtitle, actions, onNavigate, onLogout }:
                       {searchData?.streams?.length > 0 && (
                         <div className="p-2">
                           <p className="px-2 py-1 text-[10px] uppercase tracking-wider text-slate-500">Streams</p>
-                          {searchData.streams.map((s: any) => (
+                          {searchData?.streams?.map((s: any) => (
                             <button
                               key={s.id}
                               onClick={() => {
@@ -206,7 +206,7 @@ export function Header({ user, title, subtitle, actions, onNavigate, onLogout }:
                       {searchData?.files?.length > 0 && (
                         <div className="p-2">
                           <p className="px-2 py-1 text-[10px] uppercase tracking-wider text-slate-500">Files</p>
-                          {searchData.files.map((f: any) => (
+                          {searchData?.files?.map((f: any) => (
                             <button
                               key={f.id}
                               onClick={() => {

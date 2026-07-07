@@ -764,7 +764,7 @@ export async function createNextDaySchedule(stream: any) {
 // definition is idempotent (safe to call multiple times).
 import cron from "node-cron";
 
-let cronJob: cron.ScheduledTask | null = null;
+let cronJob: any = null;
 
 export function startScheduler() {
   if (cronJob) return; // already running

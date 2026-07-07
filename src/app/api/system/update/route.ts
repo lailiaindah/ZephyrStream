@@ -111,7 +111,7 @@ export async function POST(req: Request) {
       const newCommits = log.trim().split("\n").filter(Boolean);
 
       // Try to extract the latest version tag from remote commits
-      let remoteVersion = null;
+      let remoteVersion: string | null = null;
       try {
         const { stdout: tagOutput } = await execAsync(
           `git describe --tags origin/main 2>/dev/null || echo ""`,

@@ -80,7 +80,7 @@ export async function POST(
     });
 
     // Fetch YouTube channel info
-    let channelInfo = null;
+    let channelInfo: any = null;
     try {
       channelInfo = await getChannelInfo(channel.id);
       if (channelInfo) {

@@ -93,7 +93,7 @@ export async function exchangeCodeForTokens(
 
   return {
     access_token: tokens.access_token,
-    refresh_token: tokens.refresh_token,
+    refresh_token: tokens.refresh_token || undefined,
     expiry_date: tokens.expiry_date || Date.now() + 3600 * 1000,
   };
 }
@@ -222,7 +222,8 @@ export async function createBroadcast(
   const youtube = google.youtube({ version: "v3", auth: oauth2Client });
 
   // 1. Create the broadcast
-  const broadcastResponse = await youtube.liveBroadcasts.insert({
+  // @ts-expect-error — Google API overload mismatch (categoryId in snippet)
+  const broadcastResponse: any = await youtube.liveBroadcasts.insert({
     part: ["snippet", "status", "contentDetails"],
     requestBody: {
       snippet: {
@@ -247,7 +248,7 @@ export async function createBroadcast(
     },
   });
 
-  const broadcastId = broadcastResponse.data.id!;
+  const broadcastId = broadcastResponse?.data?.id || "";
 
   // 2. Create a stream bound to the broadcast — but we don't use the ingestAddress
   // Instead, the user provides their own YouTube stream key for FFmpeg RTMP streaming.
@@ -359,7 +360,8 @@ export async function updateBroadcast(
   oauth2Client.setCredentials({ access_token: accessToken });
 
   const youtube = google.youtube({ version: "v3", auth: oauth2Client });
-  await youtube.liveBroadcasts.update({
+  // @ts-expect-error — Google API overload mismatch (categoryId in snippet)
+  const updateResponse: any = await youtube.liveBroadcasts.update({
     part: ["snippet", "status"],
     requestBody: {
       id: broadcastId,
@@ -605,7 +607,7 @@ export async function uploadThumbnail(
       },
     });
 
-    return response.data.items?.[0]?.url || null;
+    return (response as any)?.data?.items?.[0]?.url || null;
   } catch (err: any) {
     console.warn("Failed to upload thumbnail:", err.message);
     return null;

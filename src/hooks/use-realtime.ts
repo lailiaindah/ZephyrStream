@@ -59,7 +59,7 @@ export function useRealtimeUpdates() {
         if (disposed) return;
 
         const socketOptions = {
-          transports: ["websocket", "polling"] as const,
+          transports: ["websocket", "polling"],
           reconnection: true,
           reconnectionDelay: 2000,
           reconnectionAttempts: 5,

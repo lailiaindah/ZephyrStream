@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       if (!file || !file.storagePath) {
         return NextResponse.json({ error: "File not found" }, { status: 404 });
       }
-      const info = await probeVideo(file.storagePath);
+      const info = await probeVideo(file.storagePath || "");
       return NextResponse.json({ info, originalName: file.originalName });
     }
 
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
           { status: 404 }
         );
       }
-      const info = await probeVideo(file.storagePath);
+      const info = await probeVideo(file.storagePath || "");
       return NextResponse.json({ info, originalName: file.originalName });
     }
 
