@@ -28,7 +28,7 @@ export async function GET() {
         youtubeChannelId: true,
         youtubeChannelName: true,
         clientId: true,
-        clientSecret: true,
+        // clientSecret is EXCLUDED from list response (encrypted in DB)
         // accessToken and refreshToken are EXCLUDED
         tokenExpiresAt: true,
         status: true,

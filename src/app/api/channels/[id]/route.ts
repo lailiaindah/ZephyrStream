@@ -31,7 +31,7 @@ export async function GET(
         youtubeChannelId: true,
         youtubeChannelName: true,
         clientId: true,
-        clientSecret: true,
+        // clientSecret is EXCLUDED from response (encrypted in DB)
         // accessToken and refreshToken are EXCLUDED
         tokenExpiresAt: true,
         status: true,
@@ -112,7 +112,11 @@ export async function PATCH(
         ...(name !== undefined && { name }),
         ...(description !== undefined && { description }),
         ...(clientId !== undefined && { clientId }),
-        ...(clientSecret !== undefined && { clientSecret: encrypt(clientSecret) }),
+        // Only update clientSecret if a new value is provided (non-empty).
+        // When editing a channel, the form sends clientSecret="" (empty)
+        // because the GET response doesn't include it. This prevents
+        // double-encryption of the existing value.
+        ...(clientSecret !== undefined && clientSecret.trim() !== "" && { clientSecret: encrypt(clientSecret) }),
         ...(status !== undefined && { status }),
       },
       select: {
@@ -123,7 +127,7 @@ export async function PATCH(
         youtubeChannelId: true,
         youtubeChannelName: true,
         clientId: true,
-        clientSecret: true,
+        // clientSecret is EXCLUDED from response (encrypted in DB)
         // accessToken and refreshToken are EXCLUDED
         tokenExpiresAt: true,
         status: true,

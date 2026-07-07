@@ -26,6 +26,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { getAuthUrl } from "@/lib/youtube";
+import { decrypt } from "@/lib/crypto";
 
 export async function POST(
   req: NextRequest,
@@ -51,7 +52,7 @@ export async function POST(
 
     const authUrl = getAuthUrl(
       channel.clientId,
-      channel.clientSecret,
+      decrypt(channel.clientSecret),
       channel.id, // state = channel ID
       redirectUri
     );

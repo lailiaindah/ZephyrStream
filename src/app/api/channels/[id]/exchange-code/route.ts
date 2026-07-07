@@ -52,9 +52,10 @@ export async function POST(
     // We always use http://localhost:3000 (see auth-url/route.ts for why).
     const redirectUri = "http://localhost:3000/api/channels/oauth-callback";
 
+    // Decrypt clientSecret before sending to Google.
     const tokens = await exchangeCodeForTokens(
       channel.clientId,
-      channel.clientSecret,
+      decrypt(channel.clientSecret),
       code,
       redirectUri
     );

@@ -99,10 +99,11 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // Exchange the authorization code for tokens
+    // Exchange the authorization code for tokens.
+    // Decrypt clientSecret before sending to Google.
     const tokens = await exchangeCodeForTokens(
       channel.clientId,
-      channel.clientSecret,
+      decrypt(channel.clientSecret),
       code,
       redirectUri
     );

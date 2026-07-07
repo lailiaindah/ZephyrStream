@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { downloadDriveFile } from "@/lib/gdrive";
 import { UPLOAD_DIR } from "@/lib/constants";
+import { decrypt } from "@/lib/crypto";
 import path from "path";
 import fs from "fs/promises";
 
@@ -59,13 +60,14 @@ export async function POST(req: NextRequest) {
     let size: number;
     let mimeType: string;
     try {
+      // Decrypt credentials before passing to Google Drive API
       const result = await downloadDriveFile(
         fileId,
         localPath,
-        channel.accessToken,
-        channel.refreshToken || undefined,
+        decrypt(channel.accessToken),
+        channel.refreshToken ? decrypt(channel.refreshToken) : undefined,
         channel.clientId,
-        channel.clientSecret
+        decrypt(channel.clientSecret)
       );
       size = result.size;
       mimeType = result.mimeType;

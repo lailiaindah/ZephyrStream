@@ -31,7 +31,7 @@ export function buildOAuthClient(channel: {
   tokenExpiresAt: Date | null;
 }) {
   // Decrypt tokens before use
-  const decryptedClientSecret = decrypt(channel.clientSecret);
+  const decryptedClientSecret = decrypt(decrypt(channel.clientSecret));
   const decryptedRefreshToken = channel.refreshToken ? decrypt(channel.refreshToken) : null;
   const decryptedAccessToken = channel.accessToken ? decrypt(channel.accessToken) : null;
 
@@ -122,7 +122,7 @@ export async function refreshAccessToken(channelId: string): Promise<string> {
   if (!channel.refreshToken) throw new Error("No refresh token — re-authorize the channel");
 
   // Decrypt stored credentials before use
-  const decryptedClientSecret = decrypt(channel.clientSecret);
+  const decryptedClientSecret = decrypt(decrypt(channel.clientSecret));
   const decryptedRefreshToken = decrypt(channel.refreshToken);
 
   if (!decryptedRefreshToken) {
@@ -187,7 +187,7 @@ export async function getChannelInfo(channelId: string): Promise<YouTubeChannelI
 
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
-    channel.clientSecret,
+    decrypt(channel.clientSecret),
     "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({ access_token: accessToken });
@@ -233,7 +233,7 @@ export async function createBroadcast(
 
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
-    channel.clientSecret,
+    decrypt(channel.clientSecret),
     "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({ access_token: accessToken });
@@ -314,7 +314,7 @@ export async function transitionBroadcast(
 
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
-    channel.clientSecret,
+    decrypt(channel.clientSecret),
     "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({ access_token: accessToken });
@@ -373,7 +373,7 @@ export async function updateBroadcast(
 
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
-    channel.clientSecret,
+    decrypt(channel.clientSecret),
     "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({ access_token: accessToken });
@@ -411,7 +411,7 @@ export async function deleteBroadcast(
 
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
-    channel.clientSecret,
+    decrypt(channel.clientSecret),
     "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({ access_token: accessToken });
@@ -474,7 +474,7 @@ export async function listBroadcasts(channelId: string) {
 
   const oauth2Client = new google.auth.OAuth2(
     channel.clientId,
-    channel.clientSecret,
+    decrypt(channel.clientSecret),
     "http://localhost:3000/api/channels/oauth-callback"
   );
   oauth2Client.setCredentials({ access_token: accessToken });
@@ -605,7 +605,7 @@ export async function uploadThumbnail(
 
     const oauth2Client = new google.auth.OAuth2(
       channel.clientId,
-      channel.clientSecret,
+      decrypt(channel.clientSecret),
       "http://localhost:3000/api/channels/oauth-callback"
     );
     oauth2Client.setCredentials({ access_token: accessToken });

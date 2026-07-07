@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { listDriveFiles } from "@/lib/gdrive";
+import { decrypt } from "@/lib/crypto";
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,11 +33,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Decrypt credentials before passing to Google Drive API
     const files = await listDriveFiles(
-      channel.accessToken,
-      channel.refreshToken || undefined,
+      decrypt(channel.accessToken),
+      channel.refreshToken ? decrypt(channel.refreshToken) : undefined,
       channel.clientId,
-      channel.clientSecret,
+      decrypt(channel.clientSecret),
       folderId || "root"
     );
 

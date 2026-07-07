@@ -33,7 +33,10 @@ function ChannelFormInner({
   const [name, setName] = useState(editingChannel?.name || "");
   const [description, setDescription] = useState(editingChannel?.description || "");
   const [clientId, setClientId] = useState(editingChannel?.clientId || "");
-  const [clientSecret, setClientSecret] = useState(editingChannel?.clientSecret || "");
+  // When editing, clientSecret is NOT returned by the API (it's encrypted in DB).
+  // Start with empty string — the user must re-enter if they want to change it.
+  // If left empty on save, the PATCH route skips the update (keeps existing value).
+  const [clientSecret, setClientSecret] = useState("");
   const [authCode, setAuthCode] = useState("");
   const [showAuthStep, setShowAuthStep] = useState(false);
 
