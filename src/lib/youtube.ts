@@ -31,7 +31,7 @@ export function buildOAuthClient(channel: {
   tokenExpiresAt: Date | null;
 }) {
   // Decrypt tokens before use
-  const decryptedClientSecret = decrypt(decrypt(channel.clientSecret));
+  const decryptedClientSecret = decrypt(channel.clientSecret);
   const decryptedRefreshToken = channel.refreshToken ? decrypt(channel.refreshToken) : null;
   const decryptedAccessToken = channel.accessToken ? decrypt(channel.accessToken) : null;
 
@@ -122,7 +122,7 @@ export async function refreshAccessToken(channelId: string): Promise<string> {
   if (!channel.refreshToken) throw new Error("No refresh token — re-authorize the channel");
 
   // Decrypt stored credentials before use
-  const decryptedClientSecret = decrypt(decrypt(channel.clientSecret));
+  const decryptedClientSecret = decrypt(channel.clientSecret);
   const decryptedRefreshToken = decrypt(channel.refreshToken);
 
   if (!decryptedRefreshToken) {
