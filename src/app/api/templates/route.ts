@@ -36,6 +36,19 @@ export async function POST(req: NextRequest) {
 
     if (!name) return NextResponse.json({ error: "Template name is required" }, { status: 400 });
 
+    // Convert spinnerEmojis to a JSON string (or null) BEFORE the Prisma call.
+    // The frontend sends a JS array (e.g. ["🎵","🎶"]) but Prisma expects
+    // a String. Empty array [] must become null (not "[]").
+    let spinnerEmojisStr: string | null = null;
+    if (Array.isArray(spinnerEmojis)) {
+      if (spinnerEmojis.length > 0) {
+        spinnerEmojisStr = JSON.stringify(spinnerEmojis);
+      }
+      // else: empty array → null
+    } else if (typeof spinnerEmojis === "string" && spinnerEmojis.trim() !== "") {
+      spinnerEmojisStr = spinnerEmojis;
+    }
+
     const template = await db.streamTemplate.create({
       data: {
         userId: user.id,
@@ -55,12 +68,7 @@ export async function POST(req: NextRequest) {
         minHours: minHours ?? 2.0,
         maxHours: maxHours ?? 4.0,
         spinnerMode: spinnerMode || "off",
-        spinnerEmojis: (() => {
-          if (!spinnerEmojis) return null;
-          if (typeof spinnerEmojis === "string") return spinnerEmojis;
-          if (Array.isArray(spinnerEmojis) && spinnerEmojis.length > 0) return JSON.stringify(spinnerEmojis);
-          return null;
-        })(),
+        spinnerEmojis: spinnerEmojisStr,
         autoCreateSchedule: autoCreateSchedule ?? false,
         shuffleTitle: shuffleTitle ?? false,
         shuffleThumbnail: shuffleThumbnail ?? false,
