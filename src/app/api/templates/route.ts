@@ -55,9 +55,12 @@ export async function POST(req: NextRequest) {
         minHours: minHours ?? 2.0,
         maxHours: maxHours ?? 4.0,
         spinnerMode: spinnerMode || "off",
-        spinnerEmojis: spinnerEmojis
-          ? (typeof spinnerEmojis === "string" ? spinnerEmojis : JSON.stringify(spinnerEmojis))
-          : null,
+        spinnerEmojis: (() => {
+          if (!spinnerEmojis) return null;
+          if (typeof spinnerEmojis === "string") return spinnerEmojis;
+          if (Array.isArray(spinnerEmojis) && spinnerEmojis.length > 0) return JSON.stringify(spinnerEmojis);
+          return null;
+        })(),
         autoCreateSchedule: autoCreateSchedule ?? false,
         shuffleTitle: shuffleTitle ?? false,
         shuffleThumbnail: shuffleThumbnail ?? false,
