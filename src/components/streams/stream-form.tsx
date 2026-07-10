@@ -235,7 +235,9 @@ function StreamFormInner({
           encoder, copyMode, videoBitrate, audioBitrate, resolution, fps, preset,
           privacyStatus, categoryId, tags, playlistId, alteredContent,
           minHours, maxHours, spinnerMode,
-          spinnerEmojis: selectedEmojis,
+          spinnerEmojis: selectedEmojis && selectedEmojis.length > 0
+            ? JSON.stringify(selectedEmojis)
+            : null,
           autoCreateSchedule,
           shuffleTitle,
           shuffleThumbnail,
