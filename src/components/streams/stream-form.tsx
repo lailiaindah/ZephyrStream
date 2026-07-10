@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,9 @@ interface StreamFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editingStream?: any;
+  // When provided, pre-fill the form with this stream's settings but
+  // act as "Create New Stream" (not edit). Used by the Copy button.
+  copyFromStream?: any;
   onSubmit: (data: any) => void;
   isLoading?: boolean;
   // When provided, restrict the channel selector to this channel only
@@ -44,28 +47,34 @@ function StreamFormInner({
   open,
   onOpenChange,
   editingStream,
+  copyFromStream,
   onSubmit,
   isLoading,
   lockedChannelId,
   channelsData,
   filesData,
 }: StreamFormProps & { channelsData: any[]; filesData: any[] }) {
+  // Use copyFromStream for pre-filling if provided, else editingStream.
+  // In copy mode, startAt is cleared (new schedule) and name gets "(copy)".
+  const source = copyFromStream || editingStream;
+  const isCopyMode = !!copyFromStream;
+
   const queryClient = useQueryClient();
-  const [name, setName] = useState(editingStream?.name || "");
-  const [description, setDescription] = useState(editingStream?.description || "");
+  const [name, setName] = useState(isCopyMode ? `${source?.name || ""} (copy)` : (source?.name || ""));
+  const [description, setDescription] = useState(source?.description || "");
   const [channelId, setChannelId] = useState<string>(
-    lockedChannelId || editingStream?.channelId || ""
+    lockedChannelId || source?.channelId || ""
   );
-  const [streamKey, setStreamKey] = useState(editingStream?.streamKey || "");
+  const [streamKey, setStreamKey] = useState(source?.streamKey || "");
   const [sourceType, setSourceType] = useState<"local" | "uploaded">("uploaded");
-  const [sourcePath, setSourcePath] = useState(editingStream?.sourcePath || "");
+  const [sourcePath, setSourcePath] = useState(source?.sourcePath || "");
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>(
-    editingStream?.sourceFileIds ? JSON.parse(editingStream.sourceFileIds) : []
+    source?.sourceFileIds ? JSON.parse(source.sourceFileIds) : []
   );
   // Playlist IDs selected as the source — at stream start, each playlist's
   // videos are resolved and combined with any individually selected files.
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<string[]>(
-    editingStream?.playlistSourceIds ? JSON.parse(editingStream.playlistSourceIds) : []
+    source?.playlistSourceIds ? JSON.parse(editingStream.playlistSourceIds) : []
   );
 
   // Clear playlist selections when the channel changes — playlists are
@@ -77,41 +86,42 @@ function StreamFormInner({
   useEffect(() => {
     setSelectedPlaylistIds([]);
   }, [channelId]);
-  const [shuffle, setShuffle] = useState(editingStream?.shuffle ?? true);
-  const [minHours, setMinHours] = useState(editingStream?.minHours ?? 2);
-  const [maxHours, setMaxHours] = useState(editingStream?.maxHours ?? 4);
+  const [shuffle, setShuffle] = useState(source?.shuffle ?? true);
+  const [minHours, setMinHours] = useState(source?.minHours ?? 2);
+  const [maxHours, setMaxHours] = useState(source?.maxHours ?? 4);
   // Convert the stored UTC startAt to the user's LOCAL timezone for the
   // datetime-local input. Previously this used toISOString().slice(0,16)
   // which produces a UTC string — the browser interprets it as local time,
   // causing the scheduled time to shift by the user's UTC offset on every
   // save. Now we format the Date in local time, which round-trips correctly.
   const [startAt, setStartAt] = useState<string>(() => {
-    if (!editingStream?.startAt) return "";
-    const d = new Date(editingStream.startAt);
-    // Format as YYYY-MM-DDTHH:MM in local time
+    // In copy mode, clear the start time — user needs to set a new schedule
+    if (isCopyMode) return "";
+    if (!source?.startAt) return "";
+    const d = new Date(source.startAt);
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const [autoCreateSchedule, setAutoCreateSchedule] = useState(
-    editingStream?.autoCreateSchedule ?? false
+    source?.autoCreateSchedule ?? false
   );
-  const [shuffleTitle, setShuffleTitle] = useState(editingStream?.shuffleTitle ?? false);
-  const [shuffleThumbnail, setShuffleThumbnail] = useState(editingStream?.shuffleThumbnail ?? false);
-  const [encoder, setEncoder] = useState(editingStream?.encoder || "auto");
-  const [copyMode, setCopyMode] = useState(editingStream?.copyMode || false);
-  const [videoBitrate, setVideoBitrate] = useState(editingStream?.videoBitrate || "4500k");
-  const [audioBitrate, setAudioBitrate] = useState(editingStream?.audioBitrate || "160k");
-  const [resolution, setResolution] = useState(editingStream?.resolution || "1920x1080");
-  const [fps, setFps] = useState(editingStream?.fps || 30);
-  const [preset, setPreset] = useState(editingStream?.preset || "veryfast");
-  const [privacyStatus, setPrivacyStatus] = useState(editingStream?.privacyStatus || "public");
-  const [categoryId, setCategoryId] = useState(editingStream?.categoryId || "22");
-  const [tags, setTags] = useState(editingStream?.tags || "");
-  const [playlistId, setPlaylistId] = useState(editingStream?.playlistId || "");
-  const [alteredContent, setAlteredContent] = useState(editingStream?.alteredContent || false);
-  const [spinnerMode, setSpinnerMode] = useState(editingStream?.spinnerMode || "off");
+  const [shuffleTitle, setShuffleTitle] = useState(source?.shuffleTitle ?? false);
+  const [shuffleThumbnail, setShuffleThumbnail] = useState(source?.shuffleThumbnail ?? false);
+  const [encoder, setEncoder] = useState(source?.encoder || "auto");
+  const [copyMode, setCopyMode] = useState(source?.copyMode || false);
+  const [videoBitrate, setVideoBitrate] = useState(source?.videoBitrate || "4500k");
+  const [audioBitrate, setAudioBitrate] = useState(source?.audioBitrate || "160k");
+  const [resolution, setResolution] = useState(source?.resolution || "1920x1080");
+  const [fps, setFps] = useState(source?.fps || 30);
+  const [preset, setPreset] = useState(source?.preset || "veryfast");
+  const [privacyStatus, setPrivacyStatus] = useState(source?.privacyStatus || "public");
+  const [categoryId, setCategoryId] = useState(source?.categoryId || "22");
+  const [tags, setTags] = useState(source?.tags || "");
+  const [playlistId, setPlaylistId] = useState(source?.playlistId || "");
+  const [alteredContent, setAlteredContent] = useState(source?.alteredContent || false);
+  const [spinnerMode, setSpinnerMode] = useState(source?.spinnerMode || "off");
   const [selectedEmojis, setSelectedEmojis] = useState<string[]>(
-    editingStream?.spinnerEmojis ? JSON.parse(editingStream.spinnerEmojis) : []
+    source?.spinnerEmojis ? JSON.parse(editingStream.spinnerEmojis) : []
   );
 
   // Fetch user's files (filtered by channelId when locked)
@@ -211,8 +221,24 @@ function StreamFormInner({
     enabled: !!channelId,
   });
 
+  // Insert a variable token at the cursor position in the description textarea.
+  // Falls back to appending at the end if cursor position can't be determined.
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const insertVariable = (token: string) => {
-    setDescription((prev) => `${prev}${token}`);
+    const textarea = descriptionRef.current;
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const newText = description.slice(0, start) + token + description.slice(end);
+      setDescription(newText);
+      // Move cursor to after the inserted token
+      setTimeout(() => {
+        textarea.focus();
+        textarea.setSelectionRange(start + token.length, start + token.length);
+      }, 0);
+    } else {
+      setDescription((prev) => `${prev}${token}`);
+    }
   };
 
   // === TEMPLATE FEATURES ===
@@ -291,7 +317,7 @@ function StreamFormInner({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Youtube className="h-5 w-5 text-cyan-300" />
-            {editingStream ? "Edit Stream" : "Create New Stream"}
+            {isCopyMode ? "Copy Stream Settings" : (editingStream ? "Edit Stream" : "Create New Stream")}
           </DialogTitle>
           <DialogDescription className="text-slate-400">
             Configure a live stream. Streaming uses the YouTube stream key (not the API) — saving your Google Cloud quota.
@@ -400,6 +426,7 @@ function StreamFormInner({
                   </div>
                 </div>
                 <Textarea
+                  ref={descriptionRef}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Stream description. Click [title] above to insert the current stream title..."
@@ -967,7 +994,7 @@ function StreamFormInner({
               className="bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950"
             >
               {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {editingStream ? "Update Stream" : "Create Stream"}
+              {editingStream ? "Update Stream" : (isCopyMode ? "Create Stream" : "Create Stream")}
             </Button>
           </DialogFooter>
         </form>
@@ -982,6 +1009,7 @@ export function StreamForm({
   open,
   onOpenChange,
   editingStream,
+  copyFromStream,
   onSubmit,
   isLoading,
   lockedChannelId,
@@ -1010,9 +1038,9 @@ export function StreamForm({
     },
   });
 
-  // Use a key based on editingStream id (or "new") so the inner form
-  // remounts and re-initializes its state cleanly when switching targets.
-  const formKey = editingStream?.id || "new";
+  // Use a key based on editingStream/copyFromStream id (or "new") so the
+  // inner form remounts and re-initializes its state cleanly when switching.
+  const formKey = editingStream?.id || copyFromStream?.id || "new";
 
   return (
     <StreamFormInner
@@ -1020,6 +1048,7 @@ export function StreamForm({
       open={open}
       onOpenChange={onOpenChange}
       editingStream={editingStream}
+      copyFromStream={copyFromStream}
       onSubmit={onSubmit}
       isLoading={isLoading}
       lockedChannelId={lockedChannelId}

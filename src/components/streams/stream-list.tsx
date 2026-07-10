@@ -39,6 +39,7 @@ export function StreamList() {
   const queryClient = useQueryClient();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const [copyingFrom, setCopyingFrom] = useState<any>(null);
   const [logStreamId, setLogStreamId] = useState<string | null>(null);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [stopDialogStream, setStopDialogStream] = useState<any>(null);
@@ -287,6 +288,7 @@ export function StreamList() {
           <Button
             onClick={() => {
               setEditing(null);
+              setCopyingFrom(null);
               setFormOpen(true);
             }}
             className="bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950"
@@ -433,6 +435,7 @@ export function StreamList() {
           <Button
             onClick={() => {
               setEditing(null);
+              setCopyingFrom(null);
               setFormOpen(true);
             }}
             className="bg-gradient-to-r from-cyan-500 to-emerald-500 text-slate-950"
@@ -554,6 +557,7 @@ export function StreamList() {
                     variant="outline"
                     onClick={() => {
                       setEditing(stream);
+                      setCopyingFrom(null);
                       setFormOpen(true);
                     }}
                     className="border-slate-700 text-slate-300 hover:bg-slate-800"
@@ -564,15 +568,14 @@ export function StreamList() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => duplicateMutation.mutate(stream)}
-                    disabled={duplicateMutation.isPending}
+                    onClick={() => {
+                      setEditing(null);
+                      setCopyingFrom(stream);
+                      setFormOpen(true);
+                    }}
                     className="border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10"
                   >
-                    {duplicateMutation.isPending && duplicateMutation.variables?.id === stream.id ? (
-                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                    ) : (
-                      <Copy className="h-3.5 w-3.5 mr-1" />
-                    )}
+                    <Copy className="h-3.5 w-3.5 mr-1" />
                     Copy
                   </Button>
                   <Button
@@ -608,6 +611,7 @@ export function StreamList() {
         open={formOpen}
         onOpenChange={setFormOpen}
         editingStream={editing}
+        copyFromStream={copyingFrom}
         onSubmit={handleSubmit}
         isLoading={createMutation.isPending || updateMutation.isPending}
         lockedChannelId={selectedChannelId && selectedChannelId !== "unassigned" && selectedChannelId !== "all" ? selectedChannelId : undefined}
