@@ -74,7 +74,7 @@ function StreamFormInner({
   // Playlist IDs selected as the source — at stream start, each playlist's
   // videos are resolved and combined with any individually selected files.
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<string[]>(
-    source?.playlistSourceIds ? JSON.parse(editingStream.playlistSourceIds) : []
+    source?.playlistSourceIds ? JSON.parse(source.playlistSourceIds) : []
   );
 
   // Clear playlist selections when the channel changes — playlists are
@@ -134,7 +134,7 @@ function StreamFormInner({
   const [alteredContent, setAlteredContent] = useState(source?.alteredContent || false);
   const [spinnerMode, setSpinnerMode] = useState(source?.spinnerMode || "off");
   const [selectedEmojis, setSelectedEmojis] = useState<string[]>(
-    source?.spinnerEmojis ? JSON.parse(editingStream.spinnerEmojis) : []
+    source?.spinnerEmojis ? JSON.parse(source.spinnerEmojis) : []
   );
 
   // Fetch user's files (filtered by channelId when locked)

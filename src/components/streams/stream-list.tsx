@@ -147,26 +147,6 @@ export function StreamList() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const duplicateMutation = useMutation({
-    mutationFn: async (sourceStream: any) => {
-      // Send a create request with duplicateFrom — backend copies all fields
-      const res = await fetch("/api/streams", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ duplicateFrom: sourceStream.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      return data;
-    },
-    onSuccess: () => {
-      toast.success("Stream duplicated");
-      queryClient.invalidateQueries({ queryKey: ["streams"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
   const startMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/streams/${id}/start`, { method: "POST" });
