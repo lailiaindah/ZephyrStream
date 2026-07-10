@@ -104,7 +104,9 @@ export async function POST(
       );
     }
 
-    // If channel is connected, create a YouTube broadcast (uses API quota)
+    // If channel is connected, ensure YouTube broadcast exists.
+    // In the new workflow, broadcast is created at schedule creation time.
+    // If it already exists, we just update it. If not (fallback), we create it.
     if (stream.channelId && stream.channel?.status === "active") {
       try {
         const startAt = stream.startAt || new Date();

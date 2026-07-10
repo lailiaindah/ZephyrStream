@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { YOUTUBE_RTMP_BASE } from "@/lib/constants";
-import { pickTitleAndThumbnail } from "@/lib/youtube";
+import { pickTitleAndThumbnail, createOrUpdateBroadcast, uploadThumbnail } from "@/lib/youtube";
 import { validateSourcePath } from "@/lib/path-validation";
 
 export async function GET(req: NextRequest) {
@@ -234,10 +234,8 @@ export async function POST(req: NextRequest) {
     });
 
     // === PICK TITLE & THUMBNAIL AT SCHEDULE CREATION TIME ===
-    // (NOT at stream start). This advances the channel's rotator indexes
-    // so the next schedule gets the next title/thumbnail in the rotation.
-    // The picked values are stored on the stream and used when the stream
-    // actually starts (auto or manual).
+    // This advances the channel's rotator indexes so the next schedule
+    // gets the next title/thumbnail in the rotation.
     const effectiveChannelId = stream.channelId;
     if (effectiveChannelId) {
       try {
@@ -268,8 +266,87 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Re-fetch the stream with resolved fields
+    // === CREATE YOUTUBE BROADCAST IMMEDIATELY AT SCHEDULE CREATION TIME ===
+    // The user wants the live event to appear in YouTube Studio as soon as
+    // the stream is created (not when it starts). This way they can verify
+    // the event exists before the scheduled start time.
     const updatedStream = await db.stream.findUnique({ where: { id: stream.id } });
+    if (updatedStream?.channelId) {
+      // Fetch channel to check if it's active
+      const channel = await db.channel.findUnique({ where: { id: updatedStream.channelId } });
+      if (channel && channel.status === "active") {
+        try {
+          const startAt = updatedStream.startAt || new Date();
+          const minSec = updatedStream.minHours * 3600;
+          const maxSec = updatedStream.maxHours * 3600;
+          const randomSec = minSec + Math.random() * (maxSec - minSec);
+          const endAt = new Date(startAt.getTime() + randomSec * 1000);
+
+          const broadcastTitle = updatedStream.resolvedTitle || updatedStream.name;
+
+          // Check if there's already a broadcast with this stream key
+          // (e.g. from a previous schedule that was deleted). If so, update it.
+          const existingStream = await db.stream.findFirst({
+            where: {
+              userId: user.id,
+              streamKey: updatedStream.streamKey,
+              broadcastId: { not: null },
+              id: { not: updatedStream.id },
+            },
+            select: { broadcastId: true },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          });
+
+          const { broadcastId, streamId: ytStreamId, created } = await createOrUpdateBroadcast(
+            updatedStream.channelId,
+            existingStream?.broadcastId || null,
+            {
+              title: broadcastTitle,
+              description: updatedStream.description || "",
+              startAt,
+              endAt,
+              privacyStatus: "public",
+              categoryId: updatedStream.categoryId,
+              tags: updatedStream.tags ? updatedStream.tags.split(",").map((t: string) => t.trim()) : undefined,
+            }
+          );
+
+          // Upload thumbnail if one was picked
+          if (updatedStream.resolvedThumbnailPath) {
+            try {
+              const thumbUrl = await uploadThumbnail(
+                updatedStream.channelId,
+                broadcastId,
+                updatedStream.resolvedThumbnailPath,
+                updatedStream.resolvedThumbnailMime || "image/jpeg"
+              );
+              if (thumbUrl) {
+                console.log(`[Create] Thumbnail uploaded: ${thumbUrl}`);
+              }
+            } catch (err: any) {
+              console.warn("[Create] Thumbnail upload failed:", err.message);
+            }
+          }
+
+          await db.stream.update({
+            where: { id: updatedStream.id },
+            data: {
+              broadcastId,
+              streamId: ytStreamId || undefined,
+              broadcastStatus: created ? "created" : "updated",
+            },
+          });
+
+          console.log(`[Create] YouTube broadcast ${created ? "created" : "updated"}: ${broadcastId}`);
+        } catch (err: any) {
+          console.warn("[Create] Failed to create YouTube broadcast:", err.message);
+        }
+      }
+    }
+
+    // Re-fetch with all resolved fields
+    const finalStream = await db.stream.findUnique({ where: { id: stream.id } });
 
     await db.activityLog.create({
       data: {
@@ -283,7 +360,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return NextResponse.json({ stream: updatedStream });
+    return NextResponse.json({ stream: finalStream });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -736,6 +736,78 @@ export async function createNextDaySchedule(stream: any) {
         if (picked.resolvedTitle) {
           console.log(`[Scheduler] Picked title for next-day stream ${newStream.id}: "${picked.resolvedTitle}"`);
         }
+
+        // === CREATE YOUTUBE BROADCAST IMMEDIATELY FOR NEXT-DAY SCHEDULE ===
+        // Same logic as POST /api/streams — create the live event now so
+        // it appears in YouTube Studio immediately.
+        const channel = await db.channel.findUnique({ where: { id: newStream.channelId } });
+        if (channel && channel.status === "active") {
+          try {
+            const freshStream = await db.stream.findUnique({ where: { id: newStream.id } });
+            if (freshStream) {
+              const startAt = freshStream.startAt || new Date();
+              const minSec = freshStream.minHours * 3600;
+              const maxSec = freshStream.maxHours * 3600;
+              const randomSec = minSec + Math.random() * (maxSec - minSec);
+              const endAt = new Date(startAt.getTime() + randomSec * 1000);
+              const broadcastTitle = freshStream.resolvedTitle || freshStream.name;
+
+              // Check for existing broadcast with same stream key
+              const existingStream = await db.stream.findFirst({
+                where: {
+                  userId: stream.userId,
+                  streamKey: freshStream.streamKey,
+                  broadcastId: { not: null },
+                  id: { not: freshStream.id },
+                },
+                select: { broadcastId: true },
+                orderBy: { createdAt: "desc" },
+                take: 1,
+              });
+
+              const { broadcastId, streamId: ytStreamId, created } = await createOrUpdateBroadcast(
+                freshStream.channelId!,
+                existingStream?.broadcastId || null,
+                {
+                  title: broadcastTitle,
+                  description: freshStream.description || "",
+                  startAt,
+                  endAt,
+                  privacyStatus: "public",
+                  categoryId: freshStream.categoryId,
+                  tags: freshStream.tags ? freshStream.tags.split(",").map((t: string) => t.trim()) : undefined,
+                }
+              );
+
+              // Upload thumbnail
+              if (freshStream.resolvedThumbnailPath) {
+                try {
+                  await uploadThumbnail(
+                    freshStream.channelId!,
+                    broadcastId,
+                    freshStream.resolvedThumbnailPath,
+                    freshStream.resolvedThumbnailMime || "image/jpeg"
+                  );
+                } catch (err: any) {
+                  console.warn("[Scheduler] Thumbnail upload failed for next-day:", err.message);
+                }
+              }
+
+              await db.stream.update({
+                where: { id: freshStream.id },
+                data: {
+                  broadcastId,
+                  streamId: ytStreamId || undefined,
+                  broadcastStatus: created ? "created" : "updated",
+                },
+              });
+
+              console.log(`[Scheduler] YouTube broadcast ${created ? "created" : "updated"} for next-day: ${broadcastId}`);
+            }
+          } catch (err: any) {
+            console.warn("[Scheduler] Failed to create YouTube broadcast for next-day:", err.message);
+          }
+        }
       } catch (err: any) {
         console.warn("[Scheduler] Failed to pick title/thumbnail for next-day:", err.message);
       }
