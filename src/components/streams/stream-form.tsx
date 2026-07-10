@@ -25,7 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { ENCODER_CHOICES, PRIVACY_OPTIONS, SPINNER_MODES, YOUTUBE_CATEGORIES, EMOJI_CATALOG, PRESET_CHOICES } from "@/lib/constants";
-import { Loader2, Youtube, Key, FileVideo, Settings2, Sparkles, Type, Shuffle, Calendar, Clock, Repeat, Save, FolderOpen, ListVideo, Search } from "lucide-react";
+import { Loader2, Youtube, Key, FileVideo, Settings2, Sparkles, Type, Shuffle, Calendar, Clock, Repeat, Save, FolderOpen, ListVideo, Search, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -318,6 +318,21 @@ function StreamFormInner({
     toast.success(`Loaded template: ${t.name}`);
   };
 
+  const deleteTemplateMutation = useMutation({
+    mutationFn: async (templateId: string) => {
+      const res = await fetch(`/api/templates/${templateId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error);
+      }
+    },
+    onSuccess: () => {
+      toast.success("Template deleted");
+      queryClient.invalidateQueries({ queryKey: ["templates"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const handleSaveTemplate = () => {
     const templateName = prompt("Enter template name:", `${name} - Preset`);
     if (!templateName) return;
@@ -337,7 +352,7 @@ function StreamFormInner({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Template selector + save button */}
+        {/* Template selector + save button + delete */}
         <div className="flex items-center gap-2 p-3 rounded-lg border border-slate-800 bg-slate-900/60">
           <FolderOpen className="h-4 w-4 text-cyan-300 shrink-0" />
           <Select value="" onValueChange={(v) => v && loadTemplate(v)}>
@@ -346,7 +361,28 @@ function StreamFormInner({
             </SelectTrigger>
             <SelectContent className="bg-slate-900 border-slate-700">
               {(templates || []).map((t) => (
-                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                <div key={t.id} className="flex items-center gap-1 pr-2 group">
+                  <SelectItem value={t.id} className="flex-1">{t.name}</SelectItem>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      if (confirm(`Delete template "${t.name}"?`)) {
+                        deleteTemplateMutation.mutate(t.id);
+                      }
+                    }}
+                    disabled={deleteTemplateMutation.isPending}
+                    className="text-slate-500 hover:text-rose-300 p-1 shrink-0"
+                    title="Delete template"
+                  >
+                    {deleteTemplateMutation.isPending && deleteTemplateMutation.variables === t.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3 w-3" />
+                    )}
+                  </button>
+                </div>
               ))}
             </SelectContent>
           </Select>
