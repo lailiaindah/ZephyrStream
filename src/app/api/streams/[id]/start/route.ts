@@ -146,6 +146,7 @@ export async function POST(
             privacyStatus: "public",
             categoryId: stream.categoryId,
             tags: stream.tags ? stream.tags.split(",").map((t) => t.trim()) : undefined,
+            alteredContent: stream.alteredContent || false,
           }
         );
         // Only update streamId if a new broadcast was created

@@ -309,6 +309,7 @@ export async function POST(req: NextRequest) {
               privacyStatus: "public",
               categoryId: updatedStream.categoryId,
               tags: updatedStream.tags ? updatedStream.tags.split(",").map((t: string) => t.trim()) : undefined,
+              alteredContent: updatedStream.alteredContent || false,
             }
           );
 

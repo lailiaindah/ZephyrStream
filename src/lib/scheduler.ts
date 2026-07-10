@@ -449,6 +449,7 @@ async function startStreamInternal(stream: any) {
           privacyStatus: "public",
           categoryId: fresh.categoryId,
           tags: fresh.tags ? fresh.tags.split(",").map((t) => t.trim()) : undefined,
+          alteredContent: fresh.alteredContent || false,
         }
       );
 
@@ -776,6 +777,7 @@ export async function createNextDaySchedule(stream: any) {
                   privacyStatus: "public",
                   categoryId: freshStream.categoryId,
                   tags: freshStream.tags ? freshStream.tags.split(",").map((t: string) => t.trim()) : undefined,
+                  alteredContent: freshStream.alteredContent || false,
                 }
               );
 

@@ -225,6 +225,7 @@ export async function createBroadcast(
     tags?: string[];
     thumbnailUrl?: string;
     madeForKids?: boolean;
+    alteredContent?: boolean;
   }
 ): Promise<{ broadcastId: string; streamId: string }> {
   const accessToken = await getValidAccessToken(channelId);
@@ -256,6 +257,8 @@ export async function createBroadcast(
       status: {
         privacyStatus: params.privacyStatus,
         selfDeclaredMadeForKids: params.madeForKids || false,
+        // YouTube "altered/synthetic content" flag — set when alteredContent is true
+        ...(params.alteredContent && { containsSyntheticMedia: true }),
       },
       contentDetails: {
         enableAutoStart: false,
@@ -365,6 +368,7 @@ export async function updateBroadcast(
     tags?: string[];
     startAt?: Date;
     endAt?: Date;
+    alteredContent?: boolean;
   }
 ): Promise<void> {
   const accessToken = await getValidAccessToken(channelId);
@@ -395,6 +399,8 @@ export async function updateBroadcast(
       status: {
         privacyStatus: params.privacyStatus || "public",
         selfDeclaredMadeForKids: false,
+        // YouTube "altered/synthetic content" flag
+        ...(params.alteredContent && { containsSyntheticMedia: true }),
       },
     },
   });
@@ -436,6 +442,7 @@ export async function createOrUpdateBroadcast(
     privacyStatus: string;
     categoryId?: string;
     tags?: string[];
+    alteredContent?: boolean;
   }
 ): Promise<{ broadcastId: string; streamId: string; created: boolean }> {
   // If we already have a broadcastId, try to update the existing broadcast
@@ -449,6 +456,7 @@ export async function createOrUpdateBroadcast(
         tags: params.tags,
         startAt: params.startAt,
         endAt: params.endAt,
+        alteredContent: params.alteredContent,
       });
       console.log(`[YouTube] Updated existing broadcast: ${existingBroadcastId}`);
       // Return the existing broadcastId + a placeholder streamId
