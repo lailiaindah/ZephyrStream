@@ -25,7 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { ENCODER_CHOICES, PRIVACY_OPTIONS, SPINNER_MODES, YOUTUBE_CATEGORIES, EMOJI_CATALOG, PRESET_CHOICES } from "@/lib/constants";
-import { Loader2, Youtube, Key, FileVideo, Settings2, Sparkles, Type, Shuffle, Calendar, Clock, Repeat, Save, FolderOpen, ListVideo } from "lucide-react";
+import { Loader2, Youtube, Key, FileVideo, Settings2, Sparkles, Type, Shuffle, Calendar, Clock, Repeat, Save, FolderOpen, ListVideo, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -86,6 +86,19 @@ function StreamFormInner({
   useEffect(() => {
     setSelectedPlaylistIds([]);
   }, [channelId]);
+
+  // Search filter for the uploaded files picker
+  const [fileSearch, setFileSearch] = useState("");
+  const filteredFiles = filesData.filter((file: any) => {
+    if (!fileSearch.trim()) return true;
+    const q = fileSearch.toLowerCase();
+    return (
+      file.originalName?.toLowerCase().includes(q) ||
+      file.name?.toLowerCase().includes(q) ||
+      file.mimeType?.toLowerCase().includes(q)
+    );
+  });
+
   const [shuffle, setShuffle] = useState(source?.shuffle ?? true);
   const [minHours, setMinHours] = useState(source?.minHours ?? 2);
   const [maxHours, setMaxHours] = useState(source?.maxHours ?? 4);
@@ -717,6 +730,19 @@ function StreamFormInner({
                         </Badge>
                       )}
                     </div>
+                    {/* Search filter for files */}
+                    {filesData && filesData.length > 0 && (
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+                        <Input
+                          type="text"
+                          placeholder="Search video files..."
+                          value={fileSearch}
+                          onChange={(e) => setFileSearch(e.target.value)}
+                          className="bg-slate-900 border-slate-700 text-white pl-8 h-8 text-xs"
+                        />
+                      </div>
+                    )}
                     <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-800 bg-slate-900/50">
                       {!filesData || filesData.length === 0 ? (
                         <div className="p-6 text-center">
@@ -727,8 +753,13 @@ function StreamFormInner({
                               : "No files uploaded yet. Go to the Files tab to upload."}
                           </p>
                         </div>
+                      ) : filteredFiles.length === 0 ? (
+                        <div className="p-6 text-center">
+                          <FileVideo className="h-8 w-8 text-slate-700 mx-auto mb-2" />
+                          <p className="text-xs text-slate-500">No files match "{fileSearch}"</p>
+                        </div>
                       ) : (
-                        filesData.map((file) => (
+                        filteredFiles.map((file) => (
                           <label
                             key={file.id}
                             className={cn(
