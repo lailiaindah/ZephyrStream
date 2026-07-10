@@ -580,6 +580,7 @@ async function stopStreamInternal(stream: any) {
 
   const { stopFFmpegStream } = await import("@/lib/ffmpeg");
   const { transitionBroadcast } = await import("@/lib/youtube");
+  const { updateBroadcast: updateBc } = await import("@/lib/youtube");
 
   // 1. Stop FFmpeg first (stop pushing video to YouTube).
   // Use fresh.pid in case it changed between the claim and now.
@@ -594,6 +595,24 @@ async function stopStreamInternal(stream: any) {
   // the next-day schedule's createOrUpdateBroadcast will fail.
   if (stream.channelId && stream.broadcastId) {
     try {
+      // Update replay privacy BEFORE transition (can't update after complete)
+      let replayPrivacy = stream.privacyStatus;
+      if (replayPrivacy === "random_unlisted") {
+        replayPrivacy = Math.random() < 0.5 ? "unlisted" : "public";
+      }
+      try {
+        await updateBc(stream.channelId, stream.broadcastId, {
+          privacyStatus: replayPrivacy,
+        });
+        console.log(`[Scheduler] Replay privacy set to: ${replayPrivacy}`);
+        await db.stream.update({
+          where: { id: stream.id },
+          data: { privacyStatus: replayPrivacy },
+        }).catch(() => {});
+      } catch (privErr: any) {
+        console.warn(`[Scheduler] Failed to set replay privacy: ${privErr.message}`);
+      }
+
       await transitionBroadcast(stream.channelId, stream.broadcastId, "complete");
       console.log(`[Scheduler] YouTube broadcast ${stream.broadcastId} completed successfully`);
     } catch (err: any) {

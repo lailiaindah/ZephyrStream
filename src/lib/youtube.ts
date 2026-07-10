@@ -257,8 +257,6 @@ export async function createBroadcast(
       status: {
         privacyStatus: params.privacyStatus,
         selfDeclaredMadeForKids: params.madeForKids || false,
-        // YouTube "altered/synthetic content" flag — set when alteredContent is true
-        ...(params.alteredContent && { containsSyntheticMedia: true }),
       },
       contentDetails: {
         enableAutoStart: false,
@@ -399,8 +397,6 @@ export async function updateBroadcast(
       status: {
         privacyStatus: params.privacyStatus || "public",
         selfDeclaredMadeForKids: false,
-        // YouTube "altered/synthetic content" flag
-        ...(params.alteredContent && { containsSyntheticMedia: true }),
       },
     },
   });

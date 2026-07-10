@@ -92,11 +92,7 @@ function StreamFormInner({
   const filteredFiles = filesData.filter((file: any) => {
     if (!fileSearch.trim()) return true;
     const q = fileSearch.toLowerCase();
-    return (
-      file.originalName?.toLowerCase().includes(q) ||
-      file.name?.toLowerCase().includes(q) ||
-      file.mimeType?.toLowerCase().includes(q)
-    );
+    return file.originalName?.toLowerCase().includes(q);
   });
 
   const [shuffle, setShuffle] = useState(source?.shuffle ?? true);

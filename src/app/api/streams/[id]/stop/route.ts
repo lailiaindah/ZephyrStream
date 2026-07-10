@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { stopFFmpegStream } from "@/lib/ffmpeg";
-import { transitionBroadcast } from "@/lib/youtube";
+import { transitionBroadcast, updateBroadcast } from "@/lib/youtube";
 import { createNextDaySchedule } from "@/lib/scheduler";
 
 export async function POST(
@@ -68,6 +68,30 @@ export async function POST(
     // retry logic will wait and retry up to 5 times.
     if (stream.channelId && stream.broadcastId) {
       try {
+        // First, update the broadcast privacy to the replay privacy
+        // (e.g. "unlisted" for random_unlisted, or keep "public").
+        // This must happen BEFORE transition to "complete" — after
+        // transition, the broadcast is locked and can't be updated.
+        let replayPrivacy = stream.privacyStatus;
+        if (replayPrivacy === "random_unlisted") {
+          replayPrivacy = Math.random() < 0.5 ? "unlisted" : "public";
+        }
+
+        try {
+          await updateBroadcast(stream.channelId, stream.broadcastId, {
+            privacyStatus: replayPrivacy,
+          });
+          console.log(`[Stop] Replay privacy set to: ${replayPrivacy}`);
+
+          // Persist the resolved replay privacy
+          await db.stream.update({
+            where: { id: stream.id },
+            data: { privacyStatus: replayPrivacy },
+          });
+        } catch (privErr: any) {
+          console.warn(`[Stop] Failed to set replay privacy: ${privErr.message}`);
+        }
+
         await transitionBroadcast(
           stream.channelId,
           stream.broadcastId,
